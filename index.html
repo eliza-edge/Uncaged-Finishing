@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Color Development Gantt — Uncaged Innovations</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute;overflow:hidden;">
+  <defs>
+    <pattern id="tex-croc" patternUnits="userSpaceOnUse" width="64" height="50" patternTransform="rotate(-2) scale(2.7)">
+      <rect width="64" height="50" fill="none"/>
+
+      <path d="M1,1 Q11,-1.5 20,1 Q22,11 19.5,22 Q10,24.5 0,21 Q-2,11 1,1 Z" fill="black" opacity="0.05"/>
+      <path d="M1,1 Q11,-1.5 20,1 Q22,11 19.5,22 Q10,24.5 0,21 Q-2,11 1,1 Z" fill="white" opacity="0.04"/>
+      <path d="M5,6 Q9,15 6,19" fill="none" stroke="black" stroke-width="0.6" opacity="0.16"/>
+      <path d="M13,4 Q11,13 15,18" fill="none" stroke="black" stroke-width="0.5" opacity="0.13"/>
+      <path d="M1,1 Q11,-1.5 20,1 Q22,11 19.5,22 Q10,24.5 0,21 Q-2,11 1,1 Z" fill="none" stroke="white" stroke-width="1.3" opacity="0.4"/>
+      <path d="M1,1 Q11,-1.5 20,1 Q22,11 19.5,22 Q10,24.5 0,21 Q-2,11 1,1 Z" fill="none" stroke="black" stroke-width="0.6" opacity="0.22"/>
+
+      <path d="M21,0 Q30,-2 38,1.5 Q39.5,12 37,23 Q28,25 21.5,22 Q19,11 21,0 Z" fill="black" opacity="0.03"/>
+      <path d="M21,0 Q30,-2 38,1.5 Q39.5,12 37,23 Q28,25 21.5,22 Q19,11 21,0 Z" fill="white" opacity="0.03"/>
+      <path d="M26,3 Q24,12 28,20" fill="none" stroke="black" stroke-width="0.5" opacity="0.14"/>
+      <path d="M21,0 Q30,-2 38,1.5 Q39.5,12 37,23 Q28,25 21.5,22 Q19,11 21,0 Z" fill="none" stroke="white" stroke-width="1.15" opacity="0.36"/>
+      <path d="M21,0 Q30,-2 38,1.5 Q39.5,12 37,23 Q28,25 21.5,22 Q19,11 21,0 Z" fill="none" stroke="black" stroke-width="0.5" opacity="0.2"/>
+
+      <path d="M39,2 Q51,-1 63,2.5 Q64.5,13 62,21.5 Q50,23.5 39.5,20.5 Q37,11 39,2 Z" fill="black" opacity="0.06"/>
+      <path d="M39,2 Q51,-1 63,2.5 Q64.5,13 62,21.5 Q50,23.5 39.5,20.5 Q37,11 39,2 Z" fill="white" opacity="0.05"/>
+      <path d="M45,5 Q42,13 47,19" fill="none" stroke="black" stroke-width="0.6" opacity="0.16"/>
+      <path d="M55,4 Q57,12 53,18" fill="none" stroke="black" stroke-width="0.5" opacity="0.13"/>
+      <path d="M39,2 Q51,-1 63,2.5 Q64.5,13 62,21.5 Q50,23.5 39.5,20.5 Q37,11 39,2 Z" fill="none" stroke="white" stroke-width="1.4" opacity="0.42"/>
+      <path d="M39,2 Q51,-1 63,2.5 Q64.5,13 62,21.5 Q50,23.5 39.5,20.5 Q37,11 39,2 Z" fill="none" stroke="black" stroke-width="0.6" opacity="0.22"/>
+
+      <path d="M-8,25 Q1,22.5 10,25.5 Q11.5,35 9,46.5 Q0,49 -8.5,46 Q-10,35 -8,25 Z" fill="black" opacity="0.04"/>
+      <path d="M-8,25 Q1,22.5 10,25.5 Q11.5,35 9,46.5 Q0,49 -8.5,46 Q-10,35 -8,25 Z" fill="white" opacity="0.03"/>
+      <path d="M-3,29 Q-1,37 -4,44" fill="none" stroke="black" stroke-width="0.5" opacity="0.14"/>
+      <path d="M-8,25 Q1,22.5 10,25.5 Q11.5,35 9,46.5 Q0,49 -8.5,46 Q-10,35 -8,25 Z" fill="none" stroke="white" stroke-width="1.25" opacity="0.38"/>
+      <path d="M-8,25 Q1,22.5 10,25.5 Q11.5,35 9,46.5 Q0,49 -8.5,46 Q-10,35 -8,25 Z" fill="none" stroke="black" stroke-width="0.5" opacity="0.2"/>
+
+      <path d="M11,24 Q21,21.5 32,25 Q34,36 31,48 Q20,50.5 11.5,47 Q9,35 11,24 Z" fill="black" opacity="0.06"/>
+      <path d="M11,24 Q21,21.5 32,25 Q34,36 31,48 Q20,50.5 11.5,47 Q9,35 11,24 Z" fill="white" opacity="0.05"/>
+      <path d="M17,28 Q14,37 18,45" fill="none" stroke="black" stroke-width="0.6" opacity="0.16"/>
+      <path d="M26,27 Q28,36 24,44" fill="none" stroke="black" stroke-width="0.5" opacity="0.13"/>
+      <path d="M11,24 Q21,21.5 32,25 Q34,36 31,48 Q20,50.5 11.5,47 Q9,35 11,24 Z" fill="none" stroke="white" stroke-width="1.4" opacity="0.42"/>
+      <path d="M11,24 Q21,21.5 32,25 Q34,36 31,48 Q20,50.5 11.5,47 Q9,35 11,24 Z" fill="none" stroke="black" stroke-width="0.6" opacity="0.22"/>
+
+      <path d="M33,26 Q42,24 53,27 Q54.5,36.5 52,47 Q42,49 33.5,46 Q31,36 33,26 Z" fill="black" opacity="0.03"/>
+      <path d="M33,26 Q42,24 53,27 Q54.5,36.5 52,47 Q42,49 33.5,46 Q31,36 33,26 Z" fill="white" opacity="0.03"/>
+      <path d="M38,30 Q36,38 40,45" fill="none" stroke="black" stroke-width="0.5" opacity="0.14"/>
+      <path d="M33,26 Q42,24 53,27 Q54.5,36.5 52,47 Q42,49 33.5,46 Q31,36 33,26 Z" fill="none" stroke="white" stroke-width="1.15" opacity="0.36"/>
+      <path d="M33,26 Q42,24 53,27 Q54.5,36.5 52,47 Q42,49 33.5,46 Q31,36 33,26 Z" fill="none" stroke="black" stroke-width="0.5" opacity="0.2"/>
+
+      <path d="M54,25 Q62,23 72,26 Q73.5,35.5 71,46.5 Q62,48.5 54.5,45.5 Q52,35 54,25 Z" fill="black" opacity="0.05"/>
+      <path d="M54,25 Q62,23 72,26 Q73.5,35.5 71,46.5 Q62,48.5 54.5,45.5 Q52,35 54,25 Z" fill="white" opacity="0.04"/>
+      <path d="M59,28 Q57,36 61,44" fill="none" stroke="black" stroke-width="0.5" opacity="0.15"/>
+      <path d="M54,25 Q62,23 72,26 Q73.5,35.5 71,46.5 Q62,48.5 54.5,45.5 Q52,35 54,25 Z" fill="none" stroke="white" stroke-width="1.3" opacity="0.4"/>
+      <path d="M54,25 Q62,23 72,26 Q73.5,35.5 71,46.5 Q62,48.5 54.5,45.5 Q52,35 54,25 Z" fill="none" stroke="black" stroke-width="0.6" opacity="0.22"/>
+    </pattern>
+
+    <pattern id="tex-croc-wild" patternUnits="userSpaceOnUse" width="100" height="78" patternTransform="rotate(-5) scale(1.9)">
+      <rect width="100" height="78" fill="none"/>
+      <path d="M4,12 C-2,0 20,-8 32,-2 C42,3 44,16 34,24 C24,32 8,28 4,18 Z" fill="white" opacity="0.22"/>
+      <path d="M4,12 C-2,0 20,-8 32,-2 C42,3 44,16 34,24 C24,32 8,28 4,18 Z" fill="none" stroke="black" stroke-width="1.6" opacity="0.44"/>
+      <ellipse cx="16" cy="6" rx="6" ry="3.5" fill="white" opacity="0.35" transform="rotate(-20 16 6)"/>
+
+      <path d="M46,-6 C60,-14 78,-8 78,6 C78,18 64,24 52,18 C42,13 38,0 46,-6 Z" fill="white" opacity="0.1"/>
+      <path d="M46,-6 C60,-14 78,-8 78,6 C78,18 64,24 52,18 C42,13 38,0 46,-6 Z" fill="none" stroke="black" stroke-width="1.8" opacity="0.46"/>
+
+      <path d="M6,32 C0,24 14,14 26,18 C36,22 38,34 30,42 C22,50 10,44 6,32 Z" fill="white" opacity="0.15"/>
+      <path d="M6,32 C0,24 14,14 26,18 C36,22 38,34 30,42 C22,50 10,44 6,32 Z" fill="none" stroke="black" stroke-width="1.4" opacity="0.4"/>
+
+      <path d="M52,14 C46,2 68,-6 82,2 C94,9 92,26 78,32 C64,38 56,24 52,14 Z" fill="white" opacity="0.28"/>
+      <path d="M52,14 C46,2 68,-6 82,2 C94,9 92,26 78,32 C64,38 56,24 52,14 Z" fill="none" stroke="black" stroke-width="1.9" opacity="0.48"/>
+      <ellipse cx="70" cy="10" rx="8" ry="4.5" fill="white" opacity="0.4" transform="rotate(15 70 10)"/>
+
+      <path d="M2,54 C8,44 28,44 36,54 C44,64 38,76 22,76 C6,76 -6,66 2,54 Z" fill="white" opacity="0.16"/>
+      <path d="M2,54 C8,44 28,44 36,54 C44,64 38,76 22,76 C6,76 -6,66 2,54 Z" fill="none" stroke="black" stroke-width="1.5" opacity="0.4"/>
+
+      <path d="M44,50 C50,38 72,40 78,52 C84,64 70,76 55,72 C42,68 38,62 44,50 Z" fill="white" opacity="0.11"/>
+      <path d="M44,50 C50,38 72,40 78,52 C84,64 70,76 55,72 C42,68 38,62 44,50 Z" fill="none" stroke="black" stroke-width="1.5" opacity="0.4"/>
+
+      <path d="M80,40 C88,32 100,36 100,48 C100,58 88,64 80,58 C74,53 74,46 80,40 Z" fill="white" opacity="0.14"/>
+      <path d="M80,40 C88,32 100,36 100,48 C100,58 88,64 80,58 C74,53 74,46 80,40 Z" fill="none" stroke="black" stroke-width="1.4" opacity="0.4"/>
+
+      <g stroke="black" stroke-width="0.5" opacity="0.3" stroke-linecap="round">
+        <line x1="12" y1="0" x2="10" y2="3"/>
+        <line x1="20" y1="-4" x2="18" y2="-1"/>
+        <line x1="30" y1="6" x2="27" y2="7.5"/>
+        <line x1="16" y1="24" x2="17" y2="20.5"/>
+        <line x1="60" y1="-9" x2="59" y2="-5.5"/>
+        <line x1="70" y1="-6" x2="68" y2="-3"/>
+        <line x1="72" y1="20" x2="69" y2="18"/>
+        <line x1="8" y1="18" x2="11" y2="19.5"/>
+        <line x1="20" y1="20" x2="18" y2="17"/>
+        <line x1="30" y1="30" x2="27" y2="28.5"/>
+        <line x1="60" y1="-3" x2="57" y2="-1"/>
+        <line x1="90" y1="6" x2="88" y2="9"/>
+        <line x1="80" y1="26" x2="78" y2="23"/>
+        <line x1="10" y1="46" x2="13" y2="45"/>
+        <line x1="26" y1="48" x2="24" y2="45"/>
+        <line x1="12" y1="70" x2="15" y2="69"/>
+        <line x1="55" y1="42" x2="58" y2="44"/>
+        <line x1="70" y1="46" x2="67" y2="45"/>
+        <line x1="65" y1="70" x2="63" y2="67"/>
+        <line x1="90" y1="34" x2="87" y2="35.5"/>
+        <line x1="98" y1="52" x2="95" y2="52"/>
+      </g>
+    </pattern>
+
+    <pattern id="tex-scale-big" patternUnits="userSpaceOnUse" width="34" height="19">
+      <path d="M0,0 Q17,24 34,0" fill="none" stroke="black" stroke-width="1.4" opacity="0.4"/>
+      <ellipse cx="17" cy="5.5" rx="9.5" ry="4.5" fill="white" opacity="0.24"/>
+      <path d="M-17,9.5 Q0,33.5 17,9.5" fill="none" stroke="black" stroke-width="1.4" opacity="0.4"/>
+      <ellipse cx="0" cy="15" rx="9.5" ry="4.5" fill="white" opacity="0.24"/>
+      <ellipse cx="34" cy="15" rx="9.5" ry="4.5" fill="white" opacity="0.24"/>
+    </pattern>
+
+    <pattern id="tex-scale-small" patternUnits="userSpaceOnUse" width="12" height="6.5">
+      <path d="M0,0 Q6,8 12,0" fill="none" stroke="black" stroke-width="0.7" opacity="0.4"/>
+      <ellipse cx="6" cy="1.9" rx="3.3" ry="1.5" fill="white" opacity="0.24"/>
+      <path d="M-6,3.25 Q0,11.25 6,3.25" fill="none" stroke="black" stroke-width="0.7" opacity="0.4"/>
+      <ellipse cx="0" cy="5.1" rx="3.3" ry="1.5" fill="white" opacity="0.24"/>
+      <ellipse cx="12" cy="5.1" rx="3.3" ry="1.5" fill="white" opacity="0.24"/>
+    </pattern>
+
+    <linearGradient id="tex-amazon-left-grad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="white"/>
+      <stop offset="52%" stop-color="white"/>
+      <stop offset="72%" stop-color="black"/>
+      <stop offset="100%" stop-color="black"/>
+    </linearGradient>
+    <linearGradient id="tex-amazon-right-grad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="black"/>
+      <stop offset="28%" stop-color="black"/>
+      <stop offset="48%" stop-color="white"/>
+      <stop offset="100%" stop-color="white"/>
+    </linearGradient>
+    <mask id="tex-amazon-left-mask"><rect width="210" height="160" fill="url(#tex-amazon-left-grad)"/></mask>
+    <mask id="tex-amazon-right-mask"><rect width="210" height="160" fill="url(#tex-amazon-right-grad)"/></mask>
+
+    <pattern id="tex-lattice-a" patternUnits="userSpaceOnUse" width="13" height="13" patternTransform="rotate(24)">
+      <line x1="0" y1="0" x2="0" y2="13" stroke="black" stroke-width="1" opacity="0.4"/>
+    </pattern>
+    <pattern id="tex-lattice-b" patternUnits="userSpaceOnUse" width="16" height="16" patternTransform="rotate(-68)">
+      <line x1="0" y1="0" x2="0" y2="16" stroke="black" stroke-width="0.9" opacity="0.32"/>
+    </pattern>
+
+    <filter id="tex-liquid-filter" x="-20%" y="-20%" width="140%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.012 0.018" numOctaves="4" seed="7" result="noise"/>
+      <feColorMatrix in="noise" type="matrix"
+        values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0.55 0.55 0.55 0 0" result="alphaNoise"/>
+      <feComponentTransfer in="alphaNoise">
+        <feFuncA type="gamma" amplitude="1.3" exponent="1.8" offset="0"/>
+      </feComponentTransfer>
+    </filter>
+
+    <filter id="tex-brushed-filter" x="-20%" y="-20%" width="140%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.45 0.01" numOctaves="2" seed="3" result="noise"/>
+      <feColorMatrix in="noise" type="matrix"
+        values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0.5 0.5 0.5 0 0" result="alphaNoise"/>
+      <feComponentTransfer in="alphaNoise">
+        <feFuncA type="gamma" amplitude="1.4" exponent="1.4" offset="0"/>
+      </feComponentTransfer>
+    </filter>
+
+    <filter id="tex-marble-filter" x="-20%" y="-20%" width="140%" height="140%">
+      <feTurbulence type="turbulence" baseFrequency="0.006 0.03" numOctaves="3" seed="21" result="noise"/>
+      <feColorMatrix in="noise" type="matrix"
+        values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0.6 0.6 0.6 0 0" result="alphaNoise"/>
+      <feComponentTransfer in="alphaNoise">
+        <feFuncA type="gamma" amplitude="1.6" exponent="3" offset="0"/>
+      </feComponentTransfer>
+    </filter>
+
+    <path id="tex-petal-shape" d="M0,0 C-3,-3 -3,-9 0,-12 C3,-9 3,-3 0,0 Z" fill="white" opacity="0.3" stroke="black" stroke-width="0.6" stroke-opacity="0.35"/>
+    <pattern id="tex-floral" patternUnits="userSpaceOnUse" width="34" height="34">
+      <g transform="translate(17,17)">
+        <use href="#tex-petal-shape" transform="rotate(0)"/>
+        <use href="#tex-petal-shape" transform="rotate(72)"/>
+        <use href="#tex-petal-shape" transform="rotate(144)"/>
+        <use href="#tex-petal-shape" transform="rotate(216)"/>
+        <use href="#tex-petal-shape" transform="rotate(288)"/>
+        <circle r="2" fill="black" opacity="0.3"/>
+        <circle r="2" fill="none" stroke="black" stroke-width="0.5" opacity="0.4"/>
+      </g>
+    </pattern>
+
+    <pattern id="tex-lace" patternUnits="userSpaceOnUse" width="26" height="30">
+      <path d="M13,0 L26,7.5 L26,22.5 L13,30 L0,22.5 L0,7.5 Z" fill="none" stroke="white" stroke-width="0.5" opacity="0.35"/>
+      <circle cx="13" cy="15" r="3" fill="none" stroke="white" stroke-width="0.5" opacity="0.4"/>
+      <circle cx="13" cy="15" r="1" fill="white" opacity="0.4"/>
+      <circle cx="13" cy="11.5" r="0.8" fill="white" opacity="0.3"/>
+      <circle cx="16" cy="13.2" r="0.8" fill="white" opacity="0.3"/>
+      <circle cx="16" cy="16.8" r="0.8" fill="white" opacity="0.3"/>
+      <circle cx="13" cy="18.5" r="0.8" fill="white" opacity="0.3"/>
+      <circle cx="10" cy="16.8" r="0.8" fill="white" opacity="0.3"/>
+      <circle cx="10" cy="13.2" r="0.8" fill="white" opacity="0.3"/>
+    </pattern>
+
+    <linearGradient id="tex-gloss-sheen" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="white" stop-opacity="0"/>
+      <stop offset="28%" stop-color="white" stop-opacity="0.8"/>
+      <stop offset="42%" stop-color="white" stop-opacity="0"/>
+      <stop offset="75%" stop-color="white" stop-opacity="0"/>
+      <stop offset="90%" stop-color="white" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+
+    <pattern id="tex-gloss-lines" patternUnits="userSpaceOnUse" width="4" height="4" patternTransform="rotate(32)">
+      <rect width="4" height="4" fill="none"/>
+      <line x1="0" y1="0" x2="0" y2="4" stroke="white" stroke-width="0.6" opacity="0.5"/>
+    </pattern>
+
+    <linearGradient id="tex-ultragloss-sheen" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="white" stop-opacity="0"/>
+      <stop offset="22%" stop-color="white" stop-opacity="0"/>
+      <stop offset="30%" stop-color="white" stop-opacity="1"/>
+      <stop offset="37%" stop-color="white" stop-opacity="0"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="tex-ultragloss-sheen2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="white" stop-opacity="0"/>
+      <stop offset="55%" stop-color="white" stop-opacity="0"/>
+      <stop offset="67%" stop-color="white" stop-opacity="0.5"/>
+      <stop offset="76%" stop-color="white" stop-opacity="0"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+
+    <filter id="tex-gloss-speckle" x="-20%" y="-20%" width="140%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="11" result="noise"/>
+      <feColorMatrix in="noise" type="matrix"
+        values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0" result="alphaNoise"/>
+      <feComponentTransfer in="alphaNoise">
+        <feFuncA type="discrete" tableValues="0 0 0 0 0 0 0 0.9 1"/>
+      </feComponentTransfer>
+    </filter>
+
+    <path id="tex-stipple-mark" d="M-5,2 C-5,-2.5 -1,-3.5 0,0 C1,3.5 5,2.5 5,-2" fill="none" stroke="white" stroke-linecap="round"/>
+    <pattern id="tex-gloss-stipple" patternUnits="userSpaceOnUse" width="17" height="17" patternTransform="rotate(6)">
+      <use href="#tex-stipple-mark" transform="translate(4,4) rotate(10) scale(1)" stroke-width="1.6" opacity="0.6"/>
+      <use href="#tex-stipple-mark" transform="translate(13,8) rotate(105) scale(0.9)" stroke-width="1.4" opacity="0.5"/>
+      <use href="#tex-stipple-mark" transform="translate(6,14) rotate(-65) scale(0.85)" stroke-width="1.4" opacity="0.45"/>
+      <use href="#tex-stipple-mark" transform="translate(16,17) rotate(40) scale(0.8)" stroke-width="1.3" opacity="0.4"/>
+    </pattern>
+  </defs>
+</svg>
+
+<div id="app">
+  <div class="header">
+    <div>
+      <h1>Color &amp; Finish Development Calendar</h1>
+      <div class="sub">Uncaged Innovations — Signature &amp; Luxe base development, tracked from lab dip to color card. <b id="rangeLabel"></b></div>
+    </div>
+    <button class="btn" id="addColorBtn">+ Add color</button>
+  </div>
+
+  <div class="tabbar" id="tabBar"></div>
+
+  <div id="viewTimeline">
+    <div class="summary" id="summaryRow"></div>
+
+    <div class="toolbar">
+      <div class="filters" id="filterChips"></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn secondary" id="bulkToggleBtn">Bulk edit</button>
+      </div>
+    </div>
+
+    <div class="bulk-bar" id="bulkBar"></div>
+
+    <div class="legend" id="legendRow"></div>
+
+    <div class="board">
+      <div class="board-scroll">
+        <div class="board-inner" id="boardInner"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="viewSwatch" style="display:none;">
+    <div id="swatchBoard"></div>
+  </div>
+
+  <div id="viewCalendar" style="display:none;">
+    <div class="cal-header">
+      <button class="icon-btn cal-nav" id="calPrev">‹</button>
+      <div class="cal-month-label" id="calMonthLabel"></div>
+      <button class="icon-btn cal-nav" id="calNext">›</button>
+    </div>
+    <div class="legend" id="calLegendRow"></div>
+    <div class="cal-grid" id="calGrid"></div>
+  </div>
+
+  <div id="viewTextures" style="display:none;">
+    <div class="texture-intro">Pick a color for any texture to preview how its grain might read in that pigment. This is a procedural approximation for directional exploration — not a substitute for a physical lab dip.</div>
+    <div id="textureGrid"></div>
+  </div>
+
+  <div id="viewEvent" style="display:none;">
+    <div class="texture-intro">Build a presentation set for the Client A event. Click + on any card to duplicate it, then pick a different color for each copy — e.g. two Liquids in two colors, three Everglades in three.</div>
+    <div id="eventGrid"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h2 id="modalTitle">Add color</h2>
+    <div class="form-grid">
+      <div class="form-field">
+        <label>Pantone code</label>
+        <input type="text" id="f_code" placeholder="e.g. 5793 C">
+      </div>
+      <div class="form-field">
+        <label>Working name</label>
+        <input type="text" id="f_name" placeholder="e.g. Moss Sage">
+      </div>
+      <div class="form-field">
+        <label>Hex / swatch</label>
+        <div class="hex-row">
+          <input type="color" id="f_hexpicker" value="#A9AD84">
+          <input type="text" id="f_hex" placeholder="#A9AD84">
+        </div>
+      </div>
+      <div class="form-field">
+        <label>Collection</label>
+        <input type="text" id="f_group" list="groupList" placeholder="e.g. Signature Stone">
+        <datalist id="groupList"></datalist>
+      </div>
+      <div class="form-field">
+        <label>Base color</label>
+        <input type="text" id="f_basecolor" list="baseColorList" placeholder="e.g. Stone Matte">
+        <datalist id="baseColorList"></datalist>
+      </div>
+      <div class="form-field">
+        <label>Texture</label>
+        <input type="text" id="f_texture" list="textureList" placeholder="Pick or write in a texture">
+        <datalist id="textureList"></datalist>
+      </div>
+      <div class="form-field full">
+        <label>Notes</label>
+        <textarea id="f_notes" rows="2" placeholder="e.g. SS27, Client D, hold for Client A event"></textarea>
+      </div>
+      <div class="form-field full">
+        <label>Status</label>
+        <select id="f_status">
+          <option value="labdip1">Lab Dip 1</option>
+          <option value="labdip2">Lab Dip 2</option>
+          <option value="approved">Approved Standard</option>
+          <option value="pilot">Pilot Run</option>
+          <option value="colorcard">Color Card</option>
+        </select>
+      </div>
+      <div class="form-field full">
+        <label>QA testing</label>
+        <select id="f_qastatus">
+          <option value="">Not tested</option>
+          <option value="qa_approved">Approved</option>
+          <option value="qa_passing80k">Passing (80K+)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="stage-editor">
+      <h3>Development timeline</h3>
+      <div id="stageEditorRows"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn secondary" id="cancelBtn">Cancel</button>
+      <button class="btn" id="saveBtn">Save color</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="exportModalOverlay">
+  <div class="modal export-modal">
+    <h2 id="exportTitle">PDF preview</h2>
+    <div id="exportPreview"></div>
+    <div id="exportStatus" class="export-status"></div>
+    <div class="modal-actions export-actions">
+      <button class="btn secondary" id="exportCloseBtn">Close</button>
+      <button class="btn secondary" id="exportPrintBtn">Print / Save as PDF</button>
+      <button class="btn secondary" id="exportTabBtn">Open in new tab</button>
+      <button class="btn" id="exportDownloadBtn">Download PDF</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="copyModalOverlay">
+  <div class="modal" style="max-width:420px;">
+    <h2>Copy color</h2>
+    <div class="form-field full">
+      <label>Copy to collection</label>
+      <select id="copyTargetGroup"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary" id="copyCancelBtn">Cancel</button>
+      <button class="btn" id="copyConfirmBtn">Copy</button>
+    </div>
+  </div>
+</div>
+
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="storage-shim.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
