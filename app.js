@@ -88,7 +88,7 @@ let activeFilter = 'all';
 let editingId = null;
 let bulkMode = false;
 let selectedIds = new Set();
-let currentView = 'timeline';
+let currentView = 'swatch';
 const NOW = new Date();
 let calendarMonth = new Date(NOW.getFullYear(), NOW.getMonth(), 1);
 let extraGroups = [];
@@ -1022,8 +1022,8 @@ function scrollToToday(){
 
 function renderTabBar(){
   const tabs = [
+    {key:'swatch', label:'Stock Colors'},
     {key:'timeline', label:'Timeline'},
-    {key:'swatch', label:'Swatch board'},
     {key:'calendar', label:'Calendar'},
     {key:'textures', label:'Textures'},
     {key:'event', label:'Client A Event'},
