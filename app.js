@@ -1022,7 +1022,7 @@ function scrollToToday(){
 
 function renderTabBar(){
   const tabs = [
-    {key:'swatch', label:'Stock Colors'},
+    {key:'swatch', label:'Stock Offerings'},
     {key:'timeline', label:'Timeline'},
     {key:'calendar', label:'Calendar'},
     {key:'textures', label:'Textures'},
@@ -1050,7 +1050,7 @@ function applyViewVisibility(){
   document.getElementById('viewEvent').style.display = currentView === 'event' ? '' : 'none';
 }
 
-// ---------- Swatch board view ----------
+// ---------- Stock Offerings view (formerly Swatch board) ----------
 function renderSwatchBoard(){
   const {ordered: orderedGroupNames, groups} = computeGroupNames(colors, true);
 
