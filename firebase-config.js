@@ -9,7 +9,7 @@
  */
 window.TRACKER_CONFIG = {
   firebase: {
-    apiKey: 'AIzaSyDw•••••••••••••••••••••••••••••••',
+    apiKey: 'AIzaSyDwEbq6ffBLVzXyZHNt8q-eZg5IaKvNWXQ',
     authDomain: 'uncaged-color-tracker.firebaseapp.com',
     projectId: 'uncaged-color-tracker',
     appId: '1:537702685262:web:424989d8a07e90172c411f',
