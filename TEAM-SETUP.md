@@ -109,8 +109,8 @@ Use your @uncagedinnovations.com Google account for all of this.
   one person's old screen from wiping out another person's work.
 - **Still no undo.** Deletes are shared too, so a deleted swatch is gone for
   everyone.
-- **Start here, not from Casey's chat copy.** Edits made in the original Claude
-  artifact don't carry over. The shared tracker starts from the built-in colors.
+- **Use the shared link only.** Older copies of the tracker (downloaded files or
+  earlier versions) don't share data. The shared tracker starts from the built-in colors.
 
 ## Troubleshooting
 
