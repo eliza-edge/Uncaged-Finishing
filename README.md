@@ -4,7 +4,7 @@ Internal color/texture development tracker for Uncaged Innovations. Plain HTML, 
 
 Features
 Stock Offerings (home tab) – collections of swatches with inline-editable name, code, base color, texture, notes and stage; drag to reorder or move; Option/Alt-drag to copy; per-collection Export PDF
-Timeline – Gantt chart of every color through Lab Dip 1 → Lab Dip 2 → Approved Standard → Pilot Run → Color Card
+In Development – every color being developed, with its base, finish, partner, development stage, trial rounds (with test results) and step-by-step Gantt timeline. Starting data is loaded with More → Import from file; it is not stored in this code.
 Calendar – month view of stage start/end dates
 Textures – procedural texture previews (croc, scale, liquid, marble, lace, …) recolorable to any color in the library
 Client A Event – duplicate textures to build a presentation set in multiple colors

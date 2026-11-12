@@ -250,12 +250,16 @@
   <div class="header">
     <div>
       <h1>Color &amp; Finish Development Calendar</h1>
-      <div class="sub">Uncaged Innovations — Signature &amp; Luxe base development, tracked from lab dip to color card. <b id="rangeLabel"></b></div>
+      <div class="sub">Uncaged Innovations — Signature &amp; Luxe base development, tracked from lab dip to color card. <b id="rangeLabel" hidden></b></div>
     </div>
     <button class="btn" id="addColorBtn">+ Add color</button>
   </div>
 
   <div class="tabbar" id="tabBar"></div>
+
+  <div id="viewDev" style="display:none;">
+    <div id="devRoot"></div>
+  </div>
 
   <div id="viewTimeline">
     <div class="summary" id="summaryRow"></div>
@@ -408,5 +412,6 @@
 <script src="firebase-config.js"></script>
 <script src="storage-shim.js"></script>
 <script src="app.js"></script>
+<script src="dev.js"></script>
 </body>
 </html>

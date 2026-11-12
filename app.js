@@ -1006,6 +1006,7 @@ function renderAll(){
   renderCalendar();
   renderTextures();
   renderEventView();
+  if(typeof window.renderDev === 'function') window.renderDev();
   if(currentView === 'timeline' && pendingScrollToToday){
     scrollToToday();
     pendingScrollToToday = false;
@@ -1023,7 +1024,7 @@ function scrollToToday(){
 function renderTabBar(){
   const tabs = [
     {key:'swatch', label:'Stock Offerings'},
-    {key:'timeline', label:'Timeline'},
+    {key:'dev', label:'In Development'},
     {key:'calendar', label:'Calendar'},
     {key:'textures', label:'Textures'},
     {key:'event', label:'Client A Event'},
@@ -1043,7 +1044,10 @@ function renderTabBar(){
 }
 
 function applyViewVisibility(){
-  document.getElementById('viewTimeline').style.display = currentView === 'timeline' ? '' : 'none';
+  // The old Timeline view is retired; In Development (dev.js) replaces it.
+  document.getElementById('viewTimeline').style.display = 'none';
+  document.getElementById('viewDev').style.display = currentView === 'dev' ? '' : 'none';
+  document.getElementById('addColorBtn').style.display = currentView === 'dev' ? 'none' : '';
   document.getElementById('viewSwatch').style.display = currentView === 'swatch' ? '' : 'none';
   document.getElementById('viewCalendar').style.display = currentView === 'calendar' ? '' : 'none';
   document.getElementById('viewTextures').style.display = currentView === 'textures' ? '' : 'none';
