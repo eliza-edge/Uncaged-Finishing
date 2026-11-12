@@ -9,10 +9,10 @@
  */
 window.TRACKER_CONFIG = {
   firebase: {
-    apiKey: '',
-    authDomain: '',
-    projectId: '',
-    appId: '',
+    apiKey: 'AIzaSyDw•••••••••••••••••••••••••••••••',
+    authDomain: 'uncaged-color-tracker.firebaseapp.com',
+    projectId: 'uncaged-color-tracker',
+    appId: '1:537702685262:web:424989d8a07e90172c411f',
   },
   // Only Google accounts with this email domain can sign in.
   // Must match the domain in firestore.rules.
