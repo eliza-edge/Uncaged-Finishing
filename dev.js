@@ -319,7 +319,7 @@
   function testBits(t){ return TEST_FIELDS.filter(f=>t && t[f.k]!=='' && t[f.k]!=null).slice(0,3).map(f=>`${f.label} ${esc(t[f.k])}`).join(' · '); }
 
   function tableHTML(gs){
-    const head = ['','Partner','Stage','Color','Project','Base','Trial','Testing','Brand review','Next step',''];
+    const head = ['Color','Partner','Stage','Project','Base','Trial','Testing','Brand review','Next step',''];
     const body = gs.map(([name, list])=>`
       <tr class="dt-group"><td colspan="${head.length}">${esc(name)} <span class="dv-count">${list.length}</span></td></tr>
       ${list.map(c=>rowHTML(c, name)).join('')}`).join('');
@@ -340,13 +340,15 @@
     const res = t ? RESULT[t.result||''] : null;
     const fk = `${gname}|${c.id}`;
     let html = `<tr class="dt-row ${open?'open':''} ${selected.has(c.id)?'is-selected':''}">
-      <td class="dt-ctl"><input type="checkbox" class="dv-check" data-act="select" data-c="${c.id}" ${selected.has(c.id)?'checked':''} title="Select for bulk update">
-        <button class="dv-caret" data-act="toggle" data-c="${c.id}" aria-label="Show details">${open?'▾':'▸'}</button></td>
+      <td class="dt-color"><div class="dt-color-in">
+        <input type="checkbox" class="dv-check" data-act="select" data-c="${c.id}" ${selected.has(c.id)?'checked':''} title="Select for bulk update">
+        <button class="dv-caret" data-act="toggle" data-c="${c.id}" aria-label="Show details">${open?'▾':'▸'}</button>
+        <span class="dt-swatch" data-act="toggle" data-c="${c.id}" style="background:${esc(c.hex||'#ddd')}"></span>
+        <span class="dt-name" data-act="toggle" data-c="${c.id}"><b>${esc(c.name||'Untitled')}</b>${c.pantone ? `<span class="dv-code">${esc(c.pantone)}</span>` : ''}</span>
+      </div></td>
       <td>${esc(c.partner||'—')}</td>
       <td><select class="dv-stage" data-c="${c.id}" data-f="stage" data-fk="${esc(fk)}|stage" style="background:${st.color};color:${contrast(st.color)}">
         ${STAGES.map(x=>`<option value="${x.key}" ${c.stage===x.key?'selected':''}>${esc(x.label)}</option>`).join('')}</select></td>
-      <td class="dt-color" data-act="toggle" data-c="${c.id}"><div class="dt-color-in"><span class="dv-swatch sm" style="background:${esc(c.hex||'#ddd')}"></span>
-        <span><b>${esc(c.name||'Untitled')}</b>${c.pantone ? `<br><span class="dv-code">${esc(c.pantone)}</span>` : ''}</span></div></td>
       <td>${c.forTags.length ? c.forTags.map(x=>`<span class="dv-tag">${esc(x)}</span>`).join(' ') : '<span class="dv-muted">—</span>'}</td>
       <td>${c.bases.length ? esc(c.bases.join(' + ')) : '<span class="dv-muted">Not set</span>'}
         ${[c.material, c.finish].filter(Boolean).length ? `<div class="dv-muted">${esc([c.material, c.finish].filter(Boolean).join(' · '))}</div>` : ''}</td>
@@ -356,7 +358,7 @@
       <td class="dt-next">${cur ? `${esc(cur.activity)}<div class="${late?'dt-late':'dv-muted'}">${esc(cur.owner||'')}${cur.end ? ` · ${late?'was due':'due'} ${esc(fmt(cur.end))}` : ''}</div>` : `<span class="dv-muted">${rdSteps(c).length ? 'R&amp;D steps complete' : 'No steps yet'}</span>`}</td>
       <td><button class="icon-btn" data-act="edit" data-c="${c.id}" title="Edit color details">✎</button></td>
     </tr>`;
-    if(open) html += `<tr class="dt-detail"><td colspan="11">${detailHTML(c, fk)}</td></tr>`;
+    if(open) html += `<tr class="dt-detail"><td colspan="10">${detailHTML(c, fk)}</td></tr>`;
     return html;
   }
 

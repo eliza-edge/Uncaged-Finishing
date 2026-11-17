@@ -661,3 +661,15 @@
   .dt-step .dt-owner{grid-area:own;} .dt-step input[data-f=start]{grid-area:sd;} .dt-step input[data-f=end]{grid-area:ed;}
   .dt-step .dt-notes{grid-area:notes;}
   .dt-step{grid-template-columns:110px minmax(0,1fr) minmax(0,1fr) auto;grid-template-areas:'st act act btn' 'own own sd ed' 'notes notes notes notes';}
+  /* Color column first and prominent, pinned when the table scrolls sideways */
+  .dt th:first-child,.dt td.dt-color{position:sticky;left:0;z-index:2;background:var(--card);box-shadow:inset -1px 0 0 var(--line);}
+  .dt thead th:first-child{background:var(--paper-soft);z-index:3;padding-left:16px;}
+  .dt-row:hover td.dt-color{background:#FCFAF5;}
+  .dt-row.open td.dt-color,.dt-row.is-selected td.dt-color{background:#FBF6EC;}
+  .dt td.dt-color{min-width:250px;padding:10px 14px 10px 10px;}
+  .dt-color-in{display:flex;gap:8px;align-items:center;}
+  .dt-swatch{width:38px;height:38px;border-radius:8px;flex:0 0 auto;box-shadow:inset 0 0 0 1px rgba(0,0,0,.12);cursor:pointer;}
+  .dt-name{display:flex;flex-direction:column;cursor:pointer;line-height:1.25;}
+  .dt-name b{font-size:14.5px;font-weight:650;color:var(--ink);}
+  .dt-name .dv-code{margin:2px 0 0;font-size:11px;}
+  .dt-row > td{vertical-align:middle;}
