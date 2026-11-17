@@ -882,12 +882,19 @@
     root.addEventListener('click', onClick);
     root.addEventListener('input', onInput);
     const dl = document.createElement('datalist'); dl.id = 'dvOwnerList'; document.body.appendChild(dl);
+    // Read-only view of In Development for the Stock Offerings tab (stock.js).
+    window.devData = {
+      colors: () => live(),
+      bases: () => settings.baseColors.slice(),
+      stage: k => stageDef(k),
+      loaded: () => loaded,
+    };
     window.renderDev = function(){
       dl.innerHTML = allOwners().map(o=>`<option value="${esc(o)}">`).join('');
       render();
     };
     window.renderDev();
-    load().then(()=>window.renderDev());
+    load().then(()=>{ window.renderDev(); if(typeof window.renderStock === 'function') window.renderStock(); });
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setup); else setup();
 })();

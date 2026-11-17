@@ -88,7 +88,7 @@ let activeFilter = 'all';
 let editingId = null;
 let bulkMode = false;
 let selectedIds = new Set();
-let currentView = 'swatch';
+let currentView = 'stock';
 const NOW = new Date();
 let calendarMonth = new Date(NOW.getFullYear(), NOW.getMonth(), 1);
 let extraGroups = [];
@@ -1007,6 +1007,7 @@ function renderAll(){
   renderTextures();
   renderEventView();
   if(typeof window.renderDev === 'function') window.renderDev();
+  if(typeof window.renderStock === 'function') window.renderStock();
   if(currentView === 'timeline' && pendingScrollToToday){
     scrollToToday();
     pendingScrollToToday = false;
@@ -1023,11 +1024,13 @@ function scrollToToday(){
 
 function renderTabBar(){
   const tabs = [
-    {key:'swatch', label:'Stock Offerings'},
+    {key:'stock', label:'Stock Offerings'},
     {key:'dev', label:'In Development'},
     {key:'calendar', label:'Calendar'},
     {key:'textures', label:'Textures'},
     {key:'event', label:'Client A Event'},
+    // The original swatch board, kept unchanged for reference.
+    {key:'swatch', label:'Old Stock Offerings'},
   ];
   document.getElementById('tabBar').innerHTML = tabs.map(t=>`
     <button class="tab-btn ${currentView===t.key?'active':''}" data-view="${t.key}">${t.label}</button>
@@ -1047,14 +1050,16 @@ function applyViewVisibility(){
   // The old Timeline view is retired; In Development (dev.js) replaces it.
   document.getElementById('viewTimeline').style.display = 'none';
   document.getElementById('viewDev').style.display = currentView === 'dev' ? '' : 'none';
-  document.getElementById('addColorBtn').style.display = currentView === 'dev' ? 'none' : '';
+  document.getElementById('viewStock').style.display = currentView === 'stock' ? '' : 'none';
+  // "+ Add color" belongs to the old swatch board; the new tabs have their own buttons.
+  document.getElementById('addColorBtn').style.display = (currentView === 'dev' || currentView === 'stock') ? 'none' : '';
   document.getElementById('viewSwatch').style.display = currentView === 'swatch' ? '' : 'none';
   document.getElementById('viewCalendar').style.display = currentView === 'calendar' ? '' : 'none';
   document.getElementById('viewTextures').style.display = currentView === 'textures' ? '' : 'none';
   document.getElementById('viewEvent').style.display = currentView === 'event' ? '' : 'none';
 }
 
-// ---------- Stock Offerings view (formerly Swatch board) ----------
+// ---------- Old Stock Offerings view (the original Swatch board, kept for reference) ----------
 function renderSwatchBoard(){
   const {ordered: orderedGroupNames, groups} = computeGroupNames(colors, true);
 

@@ -3,7 +3,9 @@ Color & Finish Development Calendar
 Internal color/texture development tracker for Uncaged Innovations. Plain HTML, CSS and JavaScript — no build step, no framework.
 
 Features
-Stock Offerings (home tab) – collections of swatches with inline-editable name, code, base color, texture, notes and stage; drag to reorder or move; Option/Alt-drag to copy; per-collection Export PDF
+Stock Offerings (home tab) – what Uncaged can sell: coating colors by base, each with its material (Signature or Luxe), textures (Fine Grain, Pebble, Nappa) and finishes (Satin, Matte), plus uncoated base material by lot. Colors approved in In Development appear automatically. Stock numbers (panels, sq ft, uncoated yards) are hidden for now: stock.js can read the inventory tracking sheet, but it stays switched off (SHOW_STOCK) until the tracker is connected live to that sheet.
+
+Old Stock Offerings – the original swatch board, kept unchanged for reference.
 In Development – every color being developed, with its base, finish, partner, development stage, trial rounds (with test results) and step-by-step Gantt timeline. Starting data is loaded with More → Import from file; it is not stored in this code.
 Calendar – month view of stage start/end dates
 Textures – procedural texture previews (croc, scale, liquid, marble, lace, …) recolorable to any color in the library
