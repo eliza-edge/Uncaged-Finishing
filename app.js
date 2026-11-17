@@ -1026,6 +1026,8 @@ function renderTabBar(){
   const tabs = [
     {key:'stock', label:'Stock Offerings'},
     {key:'dev', label:'In Development'},
+    // Table layout of the same data, shown alongside while the team picks one.
+    {key:'dev2', label:'In Development 2'},
     {key:'calendar', label:'Calendar'},
     {key:'textures', label:'Textures'},
     {key:'event', label:'Client A Event'},
@@ -1050,9 +1052,10 @@ function applyViewVisibility(){
   // The old Timeline view is retired; In Development (dev.js) replaces it.
   document.getElementById('viewTimeline').style.display = 'none';
   document.getElementById('viewDev').style.display = currentView === 'dev' ? '' : 'none';
+  document.getElementById('viewDev2').style.display = currentView === 'dev2' ? '' : 'none';
   document.getElementById('viewStock').style.display = currentView === 'stock' ? '' : 'none';
   // "+ Add color" belongs to the old swatch board; the new tabs have their own buttons.
-  document.getElementById('addColorBtn').style.display = (currentView === 'dev' || currentView === 'stock') ? 'none' : '';
+  document.getElementById('addColorBtn').style.display = (currentView === 'dev' || currentView === 'dev2' || currentView === 'stock') ? 'none' : '';
   document.getElementById('viewSwatch').style.display = currentView === 'swatch' ? '' : 'none';
   document.getElementById('viewCalendar').style.display = currentView === 'calendar' ? '' : 'none';
   document.getElementById('viewTextures').style.display = currentView === 'textures' ? '' : 'none';

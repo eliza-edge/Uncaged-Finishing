@@ -71,7 +71,10 @@
   let colors = [];
   let settings = {baseColors: DEFAULT_BASES.map(n=>({name:n, active:true}))};
   let loaded = false, loadError = '';
-  const ui = Object.assign({groupBy:'for', stage:'all', q:'', showDone:false}, readPrefs());
+  const ui = Object.assign({groupBy:'for', stage:'all', q:'', showDone:false, layout:'timeline'}, readPrefs());
+  // Two tabs share this data: "In Development" (timeline) and "In Development 2" (table).
+  const ROOTS = [{id:'devRoot', layout:'timeline'}, {id:'dev2Root', layout:'table'}];
+  let activeRoot = null;   // the tab the last click or change came from
   const expanded = new Set();
   const selected = new Set();
   let didInitialScroll = false;
@@ -228,9 +231,11 @@
   }
 
   // ---------- rendering ----------
-  function render(){
-    const root = document.getElementById('devRoot');
+  function render(){ ROOTS.forEach(r=>renderRoot(r.id, r.layout)); }
+  function renderRoot(id, layout){
+    const root = document.getElementById(id);
     if(!root) return;
+    ui.layout = layout;
     const scroller = root.querySelector('.dv-scroll');
     const keepScroll = scroller ? scroller.scrollLeft : null;
     const focusKey = document.activeElement && root.contains(document.activeElement) ? document.activeElement.dataset.fk : null;
@@ -275,6 +280,7 @@
         </div>
       </div>
       ${bulkHTML()}
+      ${ui.layout === 'table' ? (live().length === 0 ? emptyHTML() : tableHTML(gs)) : `
       <div class="legend dv-legend">
         ${[['Pearl','#8B5A34'],['Bader','#C99A3E'],['Uncaged','#6E8F6E'],['Brand / client','#B65C4A'],['Marketing','#7A6FA0']]
           .map(([l,c])=>`<span class="item"><span class="dot" style="background:${c}"></span>${l}</span>`).join('')}
@@ -289,7 +295,7 @@
           ${list.map(c=>colorHTML(c, r, name)).join('')}
         `).join('') || `<div class="dv-row"><div class="dv-left dv-muted">No colors match these filters.${!ui.showDone ? ' Approved and stopped colors are hidden. Turn on “Show approved &amp; stopped colors” to see them.' : ''}</div></div>`}
         <div class="dv-today" style="left:calc(var(--dv-left) + ${xOf(today(), r) + PX/2}px)"></div>
-      </div></div></div>`}
+      </div></div></div>`}`}
     `;
 
     const sc = root.querySelector('.dv-scroll');
@@ -304,6 +310,94 @@
       if(el){ el.focus(); if(el.setSelectionRange && el.type==='search') el.setSelectionRange(el.value.length, el.value.length); }
     }
     root.querySelectorAll('textarea.dv-notes').forEach(autoGrow);
+  }
+
+  // ----- Table layout: one row per color, a column for each thing we measure -----
+  const RESULT = {pass:['Passed','ok'], fail:['Failed','bad'], '':['Pending','wait']};
+  const FEEDBACK_CLS = {approved:'ok', changes:'bad', with_brand:'wait', '':'none'};
+  function latestTrial(c){ return c.trials[c.trials.length-1]; }
+  function testBits(t){ return TEST_FIELDS.filter(f=>t && t[f.k]!=='' && t[f.k]!=null).slice(0,3).map(f=>`${f.label} ${esc(t[f.k])}`).join(' · '); }
+
+  function tableHTML(gs){
+    const head = ['','Partner','Stage','Color','Project','Base','Trial','Testing','Brand review','Next step',''];
+    const body = gs.map(([name, list])=>`
+      <tr class="dt-group"><td colspan="${head.length}">${esc(name)} <span class="dv-count">${list.length}</span></td></tr>
+      ${list.map(c=>rowHTML(c, name)).join('')}`).join('');
+    return `<div class="dt-wrap"><table class="dt">
+      <thead><tr>${head.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+      <tbody>${body || `<tr><td colspan="${head.length}" class="dv-muted" style="padding:16px">No colors match these filters.${!ui.showDone ? ' Approved and stopped colors are hidden. Turn on “Show approved &amp; stopped colors” to see them.' : ''}</td></tr>`}</tbody>
+    </table></div>`;
+  }
+
+  function rowHTML(c, gname){
+    const open = expanded.has(c.id);
+    const st = stageDef(c.stage);
+    const t = latestTrial(c);
+    const fails = c.trials.slice(0,-1).filter(x=>x.result==='fail').length;
+    const cur = currentStep(c);
+    const due = cur && pd(cur.end);
+    const late = due && due < today() && cur.status !== 'Complete';
+    const res = t ? RESULT[t.result||''] : null;
+    const fk = `${gname}|${c.id}`;
+    let html = `<tr class="dt-row ${open?'open':''} ${selected.has(c.id)?'is-selected':''}">
+      <td class="dt-ctl"><input type="checkbox" class="dv-check" data-act="select" data-c="${c.id}" ${selected.has(c.id)?'checked':''} title="Select for bulk update">
+        <button class="dv-caret" data-act="toggle" data-c="${c.id}" aria-label="Show details">${open?'▾':'▸'}</button></td>
+      <td>${esc(c.partner||'—')}</td>
+      <td><select class="dv-stage" data-c="${c.id}" data-f="stage" data-fk="${esc(fk)}|stage" style="background:${st.color};color:${contrast(st.color)}">
+        ${STAGES.map(x=>`<option value="${x.key}" ${c.stage===x.key?'selected':''}>${esc(x.label)}</option>`).join('')}</select></td>
+      <td class="dt-color" data-act="toggle" data-c="${c.id}"><div class="dt-color-in"><span class="dv-swatch sm" style="background:${esc(c.hex||'#ddd')}"></span>
+        <span><b>${esc(c.name||'Untitled')}</b>${c.pantone ? `<br><span class="dv-code">${esc(c.pantone)}</span>` : ''}</span></div></td>
+      <td>${c.forTags.length ? c.forTags.map(x=>`<span class="dv-tag">${esc(x)}</span>`).join(' ') : '<span class="dv-muted">—</span>'}</td>
+      <td>${c.bases.length ? esc(c.bases.join(' + ')) : '<span class="dv-muted">Not set</span>'}
+        ${[c.material, c.finish].filter(Boolean).length ? `<div class="dv-muted">${esc([c.material, c.finish].filter(Boolean).join(' · '))}</div>` : ''}</td>
+      <td>${t ? `<b>Trial ${esc(t.n)}</b><div class="dv-muted dt-nowrap">${t.start||t.end ? `${esc(fmt(t.start)||'?')} – ${esc(fmt(t.end)||'…')}` : 'No dates'}</div>` : '<span class="dv-muted">Not started</span>'}</td>
+      <td>${res ? `<span class="dt-pill ${res[1]}">${res[0]}</span>${fails ? `<div class="dv-muted">${fails} earlier fail${fails===1?'':'s'}</div>` : ''}${testBits(t) ? `<div class="dv-muted">${testBits(t)}</div>` : ''}` : '<span class="dv-muted">—</span>'}</td>
+      <td>${t && c.forTags.length ? `<span class="dt-pill ${FEEDBACK_CLS[t.brandFeedback||'']}">${esc(feedbackLabel(t.brandFeedback))}</span>${t.brandNote ? `<div class="dv-muted">“${esc(t.brandNote)}”</div>` : ''}` : '<span class="dv-muted">—</span>'}</td>
+      <td class="dt-next">${cur ? `${esc(cur.activity)}<div class="${late?'dt-late':'dv-muted'}">${esc(cur.owner||'')}${cur.end ? ` · ${late?'was due':'due'} ${esc(fmt(cur.end))}` : ''}</div>` : `<span class="dv-muted">${rdSteps(c).length ? 'R&amp;D steps complete' : 'No steps yet'}</span>`}</td>
+      <td><button class="icon-btn" data-act="edit" data-c="${c.id}" title="Edit color details">✎</button></td>
+    </tr>`;
+    if(open) html += `<tr class="dt-detail"><td colspan="11">${detailHTML(c, fk)}</td></tr>`;
+    return html;
+  }
+
+  function detailHTML(c, fk){
+    const steps = rdSteps(c);
+    const prod = c.steps.length - steps.length;
+    return `<div class="dt-detail-grid">
+      <div>
+        <div class="dv-detail-head">Trial rounds</div>
+        ${c.trials.length ? `<table class="dt-mini"><thead><tr><th>Round</th><th>Partner</th><th>Dates</th><th>Testing</th><th>Brand</th><th>Test data</th></tr></thead><tbody>
+          ${c.trials.map(t=>{ const r = RESULT[t.result||'']; return `<tr>
+            <td>${t.hex ? `<span class="dv-round-swatch" style="background:${esc(t.hex)}"></span>` : ''}${esc(t.n)}${String(c.finalTrial)===String(t.n) ? ' <span class="dv-final-badge">Final</span>' : ''}</td>
+            <td>${esc(t.partner||'')}</td><td>${esc(fmt(t.start)||'?')} – ${esc(fmt(t.end)||'…')}</td>
+            <td><span class="dt-pill ${r[1]}">${r[0]}</span></td>
+            <td>${c.forTags.length ? `<span class="dt-pill ${FEEDBACK_CLS[t.brandFeedback||'']}">${esc(feedbackLabel(t.brandFeedback))}</span>${t.brandNote ? ` <span class="dv-muted">“${esc(t.brandNote)}”</span>` : ''}` : '—'}</td>
+            <td class="dv-muted">${testBits(t) || '—'}${t.notes ? `<div>${esc(t.notes)}</div>` : ''}</td></tr>`; }).join('')}
+        </tbody></table>` : '<div class="dv-muted">No trial rounds yet.</div>'}
+        <div class="dv-detail-links"><button class="linkish" data-act="edit" data-c="${c.id}" data-tab="trials">Add or edit trial rounds</button>
+          ${c.photosUrl ? ` · <a href="${esc(c.photosUrl)}" target="_blank" rel="noopener">Photos</a>` : ''}</div>
+        ${c.notes ? `<div class="dv-color-notes">${esc(c.notes)}</div>` : ''}
+      </div>
+      <div>
+        <div class="dv-detail-head">R&amp;D steps</div>
+        <div class="dt-steps">${steps.map((s,i)=>{ const k = `${fk}|${s.id}`; return `<div class="dt-step">
+          <select class="dv-status st-${esc((s.status||'').replace(/\s+/g,'-').toLowerCase())}" data-c="${c.id}" data-s="${s.id}" data-f="status" data-fk="${esc(k)}|status">
+            ${STEP_STATUSES.map(x=>`<option ${s.status===x?'selected':''}>${x}</option>`).join('')}</select>
+          <input class="dt-act" value="${esc(s.activity)}" data-c="${c.id}" data-s="${s.id}" data-f="activity" data-fk="${esc(k)}|activity" placeholder="Step">
+          <input class="dt-owner" list="dvOwnerList" value="${esc(s.owner)}" data-c="${c.id}" data-s="${s.id}" data-f="owner" data-fk="${esc(k)}|owner" placeholder="Owner">
+          <input type="date" value="${esc(s.start)}" data-c="${c.id}" data-s="${s.id}" data-f="start" data-fk="${esc(k)}|start" title="Start">
+          <input type="date" value="${esc(s.end)}" data-c="${c.id}" data-s="${s.id}" data-f="end" data-fk="${esc(k)}|end" title="End">
+          <span class="dt-stepbtns">
+            <button class="icon-btn" data-act="up" data-c="${c.id}" data-s="${s.id}" title="Move up" ${i===0?'disabled':''}>↑</button>
+            <button class="icon-btn" data-act="down" data-c="${c.id}" data-s="${s.id}" title="Move down" ${i===steps.length-1?'disabled':''}>↓</button>
+            <button class="icon-btn" data-act="delStep" data-c="${c.id}" data-s="${s.id}" title="Delete step">✕</button></span>
+          <textarea class="dv-notes dt-notes" rows="1" placeholder="Notes" data-c="${c.id}" data-s="${s.id}" data-f="notes" data-fk="${esc(k)}|notes">${esc(s.notes)}</textarea>
+        </div>`; }).join('')}</div>
+        <button class="linkish" data-act="addStep" data-c="${c.id}">+ Add step</button>
+        ${steps.length === 0 ? ` · <button class="linkish" data-act="addTemplate" data-c="${c.id}">Add the standard R&amp;D steps</button>` : ''}
+        ${prod ? `<div class="dv-muted dv-prod-note">${prod} brand / production step${prod===1?'':'s'} saved for the future Production tab.</div>` : ''}
+      </div>
+    </div>`;
   }
 
   function summaryHTML(){
@@ -496,7 +590,7 @@
 
   async function onClick(e){
     const btn = e.target.closest('[data-act]');
-    const root = document.getElementById('devRoot');
+    const root = activeRoot = e.currentTarget;
     const menu = root.querySelector('.dv-menu-list');
     if(menu && !e.target.closest('.dv-menu')) menu.hidden = true;
     if(!btn || btn.tagName === 'SELECT' || btn.tagName === 'INPUT') return;
@@ -550,13 +644,13 @@
   }
 
   async function bulkStep(){
-    const name = document.getElementById('dvBulkStep').value;
+    const name = activeRoot.querySelector('#dvBulkStep').value;
     if(!name) return alert('Choose which step to update.');
     const vals = {
-      status: document.getElementById('dvBulkStatus').value,
-      start: document.getElementById('dvBulkStart').value,
-      end: document.getElementById('dvBulkEnd').value,
-      notes: document.getElementById('dvBulkNote').value,
+      status: activeRoot.querySelector('#dvBulkStatus').value,
+      start: activeRoot.querySelector('#dvBulkStart').value,
+      end: activeRoot.querySelector('#dvBulkEnd').value,
+      notes: activeRoot.querySelector('#dvBulkNote').value,
     };
     if(!Object.values(vals).some(Boolean)) return alert('Set a status, date or note to apply.');
     let n = 0;
@@ -571,7 +665,7 @@
     toast(`Updated “${name}” on ${n} color${n===1?'':'s'}.`);
   }
   async function bulkStage(){
-    const st = document.getElementById('dvBulkStage').value;
+    const st = activeRoot.querySelector('#dvBulkStage').value;
     if(!st) return alert('Choose a stage.');
     for(const id of selected){ const c = byId(id); if(c){ c.stage = st; await save(c); } }
     render();
@@ -876,11 +970,13 @@
 
   // ---------- setup ----------
   function setup(){
-    const root = document.getElementById('devRoot');
-    if(!root) return;
-    root.addEventListener('change', onChange);
-    root.addEventListener('click', onClick);
-    root.addEventListener('input', onInput);
+    const roots = ROOTS.map(r=>document.getElementById(r.id)).filter(Boolean);
+    if(!roots.length) return;
+    roots.forEach(root=>{
+      root.addEventListener('change', e=>{ activeRoot = e.currentTarget; onChange(e); });
+      root.addEventListener('click', onClick);
+      root.addEventListener('input', onInput);
+    });
     const dl = document.createElement('datalist'); dl.id = 'dvOwnerList'; document.body.appendChild(dl);
     // Read-only view of In Development for the Stock Offerings tab (stock.js).
     window.devData = {

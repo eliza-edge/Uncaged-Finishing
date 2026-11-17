@@ -615,3 +615,49 @@
     .so-row-label{flex-direction:row;gap:8px;align-items:baseline;}
     .so-tile,.so-chip-sw{width:104px;} .so-chip-sw{height:78px;}
   }
+
+  /* ---------- In Development: table layout ---------- */
+  .dt-wrap{background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);overflow-x:auto;}
+  .dt{width:100%;border-collapse:collapse;font-size:12.5px;min-width:1100px;}
+  .dt thead th{position:sticky;top:0;background:var(--paper-soft);text-align:left;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap;}
+  .dt td{padding:9px 10px;border-bottom:1px solid var(--paper-soft);vertical-align:top;}
+  .dt .dv-muted{font-size:11.5px;margin-top:2px;}
+  .dt-group td{background:var(--paper);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--saddle-dark);padding:7px 10px;}
+  .dt-row:hover td{background:#FCFAF5;}
+  .dt-row.open td{background:#FBF6EC;border-bottom-color:transparent;}
+  .dt-row.is-selected td{background:#FBF6EC;}
+  .dt-ctl{white-space:nowrap;width:44px;}
+  .dt-ctl .dv-caret{margin-left:4px;}
+  .dt-color{cursor:pointer;min-width:150px;}
+  .dt-color-in{display:flex;gap:8px;align-items:flex-start;}
+  .dt-color .dv-swatch{margin-top:1px;flex:0 0 auto;}
+  .dt-nowrap{white-space:nowrap;}
+  .dt .dv-tag{display:inline-block;margin:0 2px 2px 0;}
+  .dt-pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--paper-soft);color:var(--ink-soft);white-space:nowrap;}
+  .dt-pill.ok{background:#E3EDE3;color:#3E6B3E;}
+  .dt-pill.bad{background:#F5E1DC;color:#9C4433;}
+  .dt-pill.wait{background:#F5ECD8;color:#8C6418;}
+  .dt-pill.none{background:transparent;color:var(--ink-soft);padding-left:0;font-weight:400;}
+  .dt select.dv-stage{max-width:170px;}
+  .dt-next{min-width:170px;max-width:240px;}
+  .dt-late{color:var(--rose);font-size:11.5px;margin-top:2px;font-weight:600;}
+  .dt-detail td{background:#FBF6EC;padding:4px 16px 16px 54px;border-bottom:1px solid var(--line);}
+  .dt-detail-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:24px;}
+  .dt-mini{width:100%;border-collapse:collapse;font-size:12px;background:var(--card);border:1px solid var(--line);border-radius:6px;}
+  .dt-mini th{text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);padding:5px 8px;border-bottom:1px solid var(--line);}
+  .dt-mini td{padding:6px 8px;border-bottom:1px solid var(--paper-soft);vertical-align:top;}
+  .dt-steps{display:flex;flex-direction:column;gap:6px;margin-bottom:6px;}
+  .dt-step{display:grid;grid-template-columns:110px minmax(0,1fr) minmax(0,1fr) auto;grid-template-areas:'st act act btn' 'own own sd ed' 'notes notes notes notes';gap:2px 4px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:5px 6px;}
+  .dt-step input,.dt-step select,.dt-step textarea{font:inherit;font-size:12px;padding:4px 5px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--ink);min-width:0;}
+  .dt-step input:hover,.dt-step select:hover,.dt-step textarea:hover{border-color:var(--line);}
+  .dt-step input:focus,.dt-step select:focus,.dt-step textarea:focus{border-color:var(--saddle);background:var(--card);outline:none;}
+  .dt-act{font-weight:500 !important;}
+  .dt-stepbtns{display:flex;gap:1px;opacity:.4;}
+  .dt-step:hover .dt-stepbtns{opacity:1;}
+  .dt-stepbtns .icon-btn{width:22px;height:22px;font-size:11px;}
+  .dt-step .dt-notes{grid-column:1 / -1;margin:0;width:100%;color:var(--ink-soft) !important;}
+  @media (max-width: 1100px){ .dt-detail-grid{grid-template-columns:1fr;} .dt-detail td{padding-left:16px;} }
+  .dt-step > select.dv-status{grid-area:st;} .dt-step .dt-act{grid-area:act;} .dt-step .dt-stepbtns{grid-area:btn;}
+  .dt-step .dt-owner{grid-area:own;} .dt-step input[data-f=start]{grid-area:sd;} .dt-step input[data-f=end]{grid-area:ed;}
+  .dt-step .dt-notes{grid-area:notes;}
+  .dt-step{grid-template-columns:110px minmax(0,1fr) minmax(0,1fr) auto;grid-template-areas:'st act act btn' 'own own sd ed' 'notes notes notes notes';}

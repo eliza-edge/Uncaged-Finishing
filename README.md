@@ -7,6 +7,8 @@ Stock Offerings (home tab) – what Uncaged can sell: coating colors by base, ea
 
 Old Stock Offerings – the original swatch board, kept unchanged for reference.
 In Development – every color being developed, with its base, finish, partner, development stage, trial rounds (with test results) and step-by-step Gantt timeline. Starting data is loaded with More → Import from file; it is not stored in this code.
+
+In Development 2 – the same colors and data as a table (no timeline): partner, stage, color, project, base, current trial, testing result, brand review and next step. Shown alongside In Development while the team chooses a layout.
 Calendar – month view of stage start/end dates
 Textures – procedural texture previews (croc, scale, liquid, marble, lace, …) recolorable to any color in the library
 Client A Event – duplicate textures to build a presentation set in multiple colors
