@@ -66,12 +66,33 @@
   function rdSteps(c){ return c.steps.filter(s=>phaseOf(s)==='rd'); }
   // Only the approved final shade moves to Stock Offerings.
   const DONE_STAGES = ['final','failed_stopped'];
+  // Textures match Stock Offerings and the inventory sheet (Freeport = Fine Grain, Denver = Pebble).
+  const DEV_TEXTURES = ['Fine Grain','Pebble','Nappa'];
+  const SQFT_PER_YARD = 12.5;   // the Vault's rule: 1 usable yd ≈ 0.5 panel ≈ 12.5 sq ft
+  function quarterOf(d){ return d.getFullYear() + ' Q' + (Math.floor(d.getMonth()/3) + 1); }
+  function quarterOptions(current){
+    const out = [], d = new Date(); d.setDate(1);
+    for(let i = 0; i < 10; i++){ out.push(quarterOf(d)); d.setMonth(d.getMonth() + 3); }
+    if(current && !out.includes(current)) out.unshift(current);
+    return out;
+  }
+  const qSort = (a,b) => a.localeCompare(b);
   const DEFAULT_BASES = ['Coffee','Stone','Onyx','Natural','Off-White','Cherry'];
 
   let colors = [];
   let settings = {baseColors: DEFAULT_BASES.map(n=>({name:n, active:true}))};
   let loaded = false, loadError = '';
-  const ui = Object.assign({groupBy:'for', stage:'all', q:'', showDone:false, layout:'timeline'}, readPrefs());
+  const ui = Object.assign({groupBy:'for', stage:'all', q:'', showDone:false, layout:'timeline', card:'', sortKey:'', sortDir:1}, readPrefs());
+  // Summary cards double as quick filters. Each card's test decides which colors it shows.
+  const CARDS = [
+    {key:'active',  label:'Active in R&amp;D', test:c=>!DONE_STAGES.includes(c.stage) && c.stage!=='on_hold', title:'Not approved, stopped or on hold'},
+    {key:'coating', label:'Coating trial',     test:c=>c.stage==='coating_trial'},
+    {key:'testing', label:'Testing / passed',  test:c=>c.stage==='testing' || c.stage==='passed', title:'Testing in progress, or passed and not yet sent to the brand'},
+    {key:'brand',   label:'With brand',        test:c=>c.stage==='brand_review'},
+    {key:'retry',   label:'Failed – retrying', test:c=>c.stage==='failed_retrying'},
+    {key:'hold',    label:'On hold',           test:c=>c.stage==='on_hold'},
+    {key:'final',   label:'Approved → Stock Offerings', test:c=>c.stage==='final', cls:'dv-passed', title:'Final approved shades'},
+  ];
   // Two tabs share this data: "In Development" (timeline) and "In Development 2" (table).
   const ROOTS = [{id:'devRoot', layout:'timeline'}, {id:'dev2Root', layout:'table'}];
   let activeRoot = null;   // the tab the last click or change came from
@@ -179,8 +200,12 @@
 
   // ---------- grouping & filtering ----------
   function matches(c){
-    if(ui.stage !== 'all' && c.stage !== ui.stage) return false;
-    if(ui.stage === 'all' && !ui.showDone && DONE_STAGES.includes(c.stage)) return false;
+    const card = CARDS.find(x=>x.key===ui.card);
+    if(card){ if(!card.test(c)) return false; }
+    else {
+      if(ui.stage !== 'all' && c.stage !== ui.stage) return false;
+      if(ui.stage === 'all' && !ui.showDone && DONE_STAGES.includes(c.stage)) return false;
+    }
     const q = ui.q.trim().toLowerCase();
     if(!q) return true;
     return [c.name, c.pantone, c.partner, c.material, c.finish, c.notes, ...c.forTags, ...c.bases]
@@ -319,14 +344,80 @@
   function testBits(t){ return TEST_FIELDS.filter(f=>t && t[f.k]!=='' && t[f.k]!=null).slice(0,3).map(f=>`${f.label} ${esc(t[f.k])}`).join(' · '); }
 
   function tableHTML(gs){
-    const head = ['Color','Partner','Stage','Project','Base','Trial','Testing','Brand review','Next step',''];
+    const head = ['Color','Partner','Stage','Project','Base &amp; texture','Trial','Testing','Brand review','Forecasted order','Next step',''];
+    const keys = ['color','partner','stage','project','base','trial','testing','brand','forecast','next',''];
     const body = gs.map(([name, list])=>`
       <tr class="dt-group"><td colspan="${head.length}">${esc(name)} <span class="dv-count">${list.length}</span></td></tr>
-      ${list.map(c=>rowHTML(c, name)).join('')}`).join('');
-    return `<div class="dt-wrap"><table class="dt">
-      <thead><tr>${head.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+      ${sortRows(list).map(c=>rowHTML(c, name)).join('')}`).join('');
+    return `${forecastHTML()}<div class="dt-wrap"><table class="dt">
+      <thead><tr>${head.map((h,i)=> keys[i]
+        ? `<th class="dt-sort ${ui.sortKey===keys[i]?'on':''}" data-act="sort" data-k="${keys[i]}" title="Sort by ${h}"
+             aria-sort="${ui.sortKey===keys[i] ? (ui.sortDir===1?'ascending':'descending') : 'none'}">${h}<span class="dt-arrow">${ui.sortKey===keys[i] ? (ui.sortDir===1?'▲':'▼') : '↕'}</span></th>`
+        : '<th></th>').join('')}</tr></thead>
       <tbody>${body || `<tr><td colspan="${head.length}" class="dv-muted" style="padding:16px">No colors match these filters.${!ui.showDone ? ' Approved and stopped colors are hidden. Turn on “Show approved &amp; stopped colors” to see them.' : ''}</td></tr>`}</tbody>
     </table></div>`;
+  }
+
+  // Forecasted base material needs: forecast sq ft totalled by base, material and texture, per quarter.
+  function forecastHTML(){
+    const list = live().filter(c=>c.stage!=='failed_stopped' && Number(c.forecastSqft) > 0);
+    if(!list.length) return `<div class="dt-fcbox empty">Add a <b>forecasted order</b> (sq ft and quarter) to a color, and the base material it will need is totalled here by base, material and texture.</div>`;
+    const rows = new Map(), quarters = new Set();
+    list.forEach(c=>{
+      const key = [c.bases.join(' + ') || 'Base not set', c.material || 'Material not set', c.texture || 'Texture not set'];
+      const k = key.join('|'), q = c.forecastQuarter || 'No quarter';
+      quarters.add(q);
+      if(!rows.has(k)) rows.set(k, {key, byQ:{}, total:0, colors:[]});
+      const r = rows.get(k); const n = Number(c.forecastSqft);
+      r.byQ[q] = (r.byQ[q]||0) + n; r.total += n; r.colors.push(c.name);
+    });
+    const qs = [...quarters].sort((a,b)=> a==='No quarter' ? 1 : b==='No quarter' ? -1 : qSort(a,b));
+    const fmtN = n => Math.round(n).toLocaleString('en-US');
+    const grand = [...rows.values()].reduce((a,r)=>a+r.total,0);
+    return `<div class="dt-fcbox">
+      <div class="dt-fc-title">Forecasted base material needs <span class="dv-muted">from forecasted orders below · ${list.length} color${list.length===1?'':'s'}</span></div>
+      <div class="dt-fc-scroll"><table class="dt-mini dt-fc-table">
+        <thead><tr><th>Base</th><th>Material</th><th>Texture</th>${qs.map(q=>`<th class="r">${esc(q)}</th>`).join('')}<th class="r">Total sq ft</th><th class="r">≈ Usable yds</th></tr></thead>
+        <tbody>${[...rows.values()].sort((a,b)=>b.total-a.total).map(r=>`<tr title="${esc(r.colors.join(', '))}">
+          ${r.key.map(x=>`<td class="${/not set$/.test(x)?'dv-muted':''}">${esc(x)}</td>`).join('')}
+          ${qs.map(q=>`<td class="r">${r.byQ[q] ? fmtN(r.byQ[q]) : ''}</td>`).join('')}
+          <td class="r"><b>${fmtN(r.total)}</b></td><td class="r">${fmtN(r.total / SQFT_PER_YARD)}</td></tr>`).join('')}
+          <tr class="dt-fc-total"><td colspan="3">All forecasts</td>${qs.map(q=>`<td class="r">${fmtN([...rows.values()].reduce((a,r)=>a+(r.byQ[q]||0),0))}</td>`).join('')}
+          <td class="r"><b>${fmtN(grand)}</b></td><td class="r">${fmtN(grand / SQFT_PER_YARD)}</td></tr>
+        </tbody></table></div>
+      <div class="dv-muted dt-fc-note">Yards use the Vault's rule (12.5 sq ft per usable yard). A color on two bases (e.g. Natural + Off-White) is counted once, on a combined line.</div>
+    </div>`;
+  }
+
+  // Sorting by a column heading. Rows stay inside their group; blanks always sort last.
+  const RESULT_ORDER = {pass:0, '':1, fail:2};
+  const FEEDBACK_ORDER = {approved:0, with_brand:1, changes:2, '':3};
+  function sortValue(c, key){
+    const t = latestTrial(c), cur = currentStep(c);
+    switch(key){
+      case 'color':    return (c.name||'').toLowerCase();
+      case 'partner':  return (c.partner||'').toLowerCase();
+      case 'stage':    return STAGES.findIndex(x=>x.key===c.stage);
+      case 'project':  return (c.forTags[0]||'').toLowerCase();
+      case 'base':     return [c.bases.join(' + '), c.texture].filter(Boolean).join(' ').toLowerCase();
+      case 'trial':    return t ? Number(t.n)||c.trials.length : '';
+      case 'testing':  return t ? RESULT_ORDER[t.result||''] : '';
+      case 'brand':    return t && c.forTags.length ? FEEDBACK_ORDER[t.brandFeedback||''] : '';
+      case 'forecast': return c.forecastQuarter ? c.forecastQuarter + ' ' + String(Number(c.forecastSqft)||0).padStart(9,'0') : (Number(c.forecastSqft) ? '~' + String(Number(c.forecastSqft)).padStart(9,'0') : '');
+      case 'next':     return cur && cur.end ? cur.end : '';
+    }
+    return '';
+  }
+  function sortRows(list){
+    if(!ui.sortKey) return list;
+    return list.slice().sort((a,b)=>{
+      const x = sortValue(a, ui.sortKey), y = sortValue(b, ui.sortKey);
+      const ex = x === '' || x === -1, ey = y === '' || y === -1;
+      if(ex !== ey) return ex ? 1 : -1;
+      if(x < y) return -ui.sortDir;
+      if(x > y) return ui.sortDir;
+      return (a.order||0) - (b.order||0);
+    });
   }
 
   function rowHTML(c, gname){
@@ -350,15 +441,23 @@
       <td><select class="dv-stage" data-c="${c.id}" data-f="stage" data-fk="${esc(fk)}|stage" style="background:${st.color};color:${contrast(st.color)}">
         ${STAGES.map(x=>`<option value="${x.key}" ${c.stage===x.key?'selected':''}>${esc(x.label)}</option>`).join('')}</select></td>
       <td>${c.forTags.length ? c.forTags.map(x=>`<span class="dv-tag">${esc(x)}</span>`).join(' ') : '<span class="dv-muted">—</span>'}</td>
-      <td>${c.bases.length ? esc(c.bases.join(' + ')) : '<span class="dv-muted">Not set</span>'}
+      <td>${c.bases.length ? `<b class="dt-base">${esc(c.bases.join(' + '))}</b>` : '<span class="dv-muted">Base not set</span>'}
+        <div><select class="dt-tex ${c.texture ? '' : 'unset'}" data-c="${c.id}" data-f="texture" data-fk="${esc(fk)}|texture" title="Texture it is being tested on">
+          <option value="">Texture?</option>${[...new Set([...DEV_TEXTURES, ...(c.texture ? [c.texture] : [])])].map(x=>`<option ${c.texture===x?'selected':''}>${esc(x)}</option>`).join('')}
+        </select></div>
         ${[c.material, c.finish].filter(Boolean).length ? `<div class="dv-muted">${esc([c.material, c.finish].filter(Boolean).join(' · '))}</div>` : ''}</td>
       <td>${t ? `<b>Trial ${esc(t.n)}</b><div class="dv-muted dt-nowrap">${t.start||t.end ? `${esc(fmt(t.start)||'?')} – ${esc(fmt(t.end)||'…')}` : 'No dates'}</div>` : '<span class="dv-muted">Not started</span>'}</td>
       <td>${res ? `<span class="dt-pill ${res[1]}">${res[0]}</span>${fails ? `<div class="dv-muted">${fails} earlier fail${fails===1?'':'s'}</div>` : ''}${testBits(t) ? `<div class="dv-muted">${testBits(t)}</div>` : ''}` : '<span class="dv-muted">—</span>'}</td>
       <td>${t && c.forTags.length ? `<span class="dt-pill ${FEEDBACK_CLS[t.brandFeedback||'']}">${esc(feedbackLabel(t.brandFeedback))}</span>${t.brandNote ? `<div class="dv-muted">“${esc(t.brandNote)}”</div>` : ''}` : '<span class="dv-muted">—</span>'}</td>
+      <td class="dt-fc">
+        <div class="dt-fc-row"><input type="number" min="0" step="10" inputmode="numeric" placeholder="—" value="${esc(c.forecastSqft||'')}" data-c="${c.id}" data-f="forecastSqft" data-fk="${esc(fk)}|fsq" title="Forecasted order, sq ft"><span class="dv-muted">sq ft</span></div>
+        <select data-c="${c.id}" data-f="forecastQuarter" data-fk="${esc(fk)}|fq" title="Quarter of the forecasted order" class="${c.forecastQuarter ? '' : 'unset'}">
+          <option value="">Quarter?</option>${quarterOptions(c.forecastQuarter).map(q=>`<option ${c.forecastQuarter===q?'selected':''}>${q}</option>`).join('')}
+        </select></td>
       <td class="dt-next">${cur ? `${esc(cur.activity)}<div class="${late?'dt-late':'dv-muted'}">${esc(cur.owner||'')}${cur.end ? ` · ${late?'was due':'due'} ${esc(fmt(cur.end))}` : ''}</div>` : `<span class="dv-muted">${rdSteps(c).length ? 'R&amp;D steps complete' : 'No steps yet'}</span>`}</td>
       <td><button class="icon-btn" data-act="edit" data-c="${c.id}" title="Edit color details">✎</button></td>
     </tr>`;
-    if(open) html += `<tr class="dt-detail"><td colspan="10">${detailHTML(c, fk)}</td></tr>`;
+    if(open) html += `<tr class="dt-detail"><td colspan="11">${detailHTML(c, fk)}</td></tr>`;
     return html;
   }
 
@@ -404,19 +503,14 @@
 
   function summaryHTML(){
     const L = live();
-    const count = st => L.filter(c=>c.stage===st).length;
-    const active = L.filter(c=>!DONE_STAGES.includes(c.stage) && c.stage!=='on_hold');
-    const card = (n,l,cls='',title='') => `<div class="summary-card ${cls}" title="${esc(title)}"><div class="num">${n}</div><div class="lbl">${l}</div></div>`;
-    return `<div class="summary">
-      ${card(active.length,'Active in R&amp;D','','Not approved, stopped or on hold')}
-      ${card(count('coating_trial'),'Coating trial')}
-      ${card(count('testing') + count('passed'),'Testing / passed','','Testing in progress, or passed and not yet sent to the brand')}
-      ${card(count('brand_review'),'With brand')}
-      ${card(count('failed_retrying'),'Failed – retrying')}
-      ${card(count('on_hold'),'On hold')}
-      ${card(count('final'),'Approved → Stock Offerings','dv-passed','Final approved shades. Turn on “Show approved” to see them here.')}
-    </div>`;
+    return `<div class="summary dv-cards">
+      ${CARDS.map(k=>`<button type="button" class="summary-card dv-card ${k.cls||''} ${ui.card===k.key?'on':''}" data-act="card" data-k="${k.key}"
+        title="${esc((k.title ? k.title + '. ' : '') + (ui.card===k.key ? 'Click again to show all' : 'Click to show only these'))}" aria-pressed="${ui.card===k.key}">
+        <div class="num">${L.filter(k.test).length}</div><div class="lbl">${k.label}</div></button>`).join('')}
+    </div>
+    ${ui.card ? `<div class="dv-cardfilter">Showing only <b>${CARDS.find(k=>k.key===ui.card).label}</b> <button class="linkish" data-act="card" data-k="${ui.card}">Show all</button></div>` : ''}`;
   }
+
 
   function emptyHTML(){
     return `<div class="dv-empty">
@@ -569,7 +663,7 @@
     const el = e.target;
     const act = el.dataset.act;
     if(act === 'groupBy'){ ui.groupBy = el.value; writePrefs(); return render(); }
-    if(act === 'stageFilter'){ ui.stage = el.value; return render(); }
+    if(act === 'stageFilter'){ ui.stage = el.value; ui.card = ''; return render(); }
     if(act === 'showDone'){ ui.showDone = el.checked; return render(); }
     if(act === 'select'){
       el.checked ? selected.add(el.dataset.c) : selected.delete(el.dataset.c);
@@ -577,6 +671,11 @@
     }
     const c = byId(el.dataset.c); const f = el.dataset.f;
     if(!c || !f) return;
+    if(f === 'texture' || f === 'forecastSqft' || f === 'forecastQuarter'){
+      c[f] = f === 'forecastSqft' ? (el.value === '' ? '' : String(Math.max(0, Math.round(Number(el.value)) || 0))) : el.value;
+      saveQuietly(c);
+      return setTimeout(render, 0);
+    }
     if(f === 'stage'){
       c.stage = el.value; saveQuietly(c);
       if(c.stage === 'final' && !ui.showDone) toast(`${c.name} is approved – final. It moves to Stock Offerings and is hidden here.`);
@@ -626,6 +725,12 @@
         await save(c); return render();
       }
       case 'clearSel': selected.clear(); return render();
+      case 'card': ui.card = ui.card === btn.dataset.k ? '' : btn.dataset.k; if(ui.card) ui.stage = 'all'; return render();
+      case 'sort':
+        if(ui.sortKey !== btn.dataset.k){ ui.sortKey = btn.dataset.k; ui.sortDir = 1; }
+        else if(ui.sortDir === 1) ui.sortDir = -1;
+        else ui.sortKey = '';                       // third click: back to the normal order
+        return render();
       case 'bulkStep': return bulkStep();
       case 'bulkStage': return bulkStage();
       case 'exportJson': menu.hidden = true; return exportJson();
@@ -769,9 +874,11 @@
           ${baseNames.map(b=>`<label><input type="checkbox" class="dvBase" value="${esc(b)}" ${c.bases.includes(b)?'checked':''}> ${esc(b)}</label>`).join('')}
         </div></div>
         <div class="form-field"><label>Base used</label><select id="dvBaseForm">${opt(BASE_FORMS, c.baseForm, 'Not set')}</select></div>
-        <div class="form-field"><label>Texture tested on</label><input id="dvTexture" list="dvTextureList" value="${esc(c.texture)}"></div>
+        <div class="form-field"><label>Texture tested on</label><select id="dvTexture"><option value="">Not set</option>${[...new Set([...DEV_TEXTURES, ...(c.texture ? [c.texture] : [])])].map(x=>`<option ${c.texture===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
         <div class="form-field"><label>Partner (trial location)</label><input id="dvPartner" list="dvPartnerList" value="${esc(c.partner)}"></div>
         <div class="form-field"><label>Development stage</label><select id="dvStage">${STAGES.map(s=>`<option value="${s.key}" ${c.stage===s.key?'selected':''}>${esc(s.label)}</option>`).join('')}</select></div>
+        <div class="form-field"><label>Forecasted order (sq ft)</label><input id="dvFcSqft" type="number" min="0" step="10" value="${esc(c.forecastSqft||'')}"></div>
+        <div class="form-field"><label>Forecasted order quarter</label><select id="dvFcQ"><option value="">Not set</option>${quarterOptions(c.forecastQuarter).map(q=>`<option ${c.forecastQuarter===q?'selected':''}>${q}</option>`).join('')}</select></div>
         <div class="form-field full"><label>Availability</label><select id="dvAvail">${opt(AVAILABILITY, c.availability, 'Not set')}</select></div>
         <div class="form-field full"><label>Photos link (e.g. Dropbox)</label><input id="dvPhotos" value="${esc(c.photosUrl)}" placeholder="https://"></div>
         <div class="form-field full"><label>Notes</label><textarea id="dvNotes" rows="2">${esc(c.notes)}</textarea></div>
@@ -811,6 +918,7 @@
     c.forTags = v('dvFor').split(',').map(s=>s.trim()).filter(Boolean);
     c.material = v('dvMaterial'); c.finish = v('dvFinish'); c.baseForm = v('dvBaseForm');
     c.bases = [...document.querySelectorAll('#dvModal .dvBase:checked')].map(x=>x.value);
+    c.forecastSqft = v('dvFcSqft') === '' ? '' : String(Math.max(0, Math.round(Number(v('dvFcSqft'))) || 0)); c.forecastQuarter = v('dvFcQ');
     c.texture = v('dvTexture').trim(); c.partner = v('dvPartner').trim(); c.stage = v('dvStage');
     c.availability = v('dvAvail'); c.photosUrl = v('dvPhotos').trim(); c.notes = v('dvNotes');
     document.querySelectorAll('#dvModal .dv-trial-edit').forEach(row=>{
@@ -933,10 +1041,10 @@
   }
   function exportCsv(){
     const q = v => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
-    const head = ['Color','Pantone','For','Material','Base color','Finish','Partner','Stage','Trial rounds','Phase','Step','Owner','Start','End','Days','Status','Notes'];
+    const head = ['Color','Pantone','For','Material','Base color','Texture','Finish','Forecast sq ft','Forecast quarter','Partner','Stage','Trial rounds','Phase','Step','Owner','Start','End','Days','Status','Notes'];
     const rows = [head];
     live().sort((a,b)=>a.order-b.order).forEach(c=>{
-      const base = [c.name,c.pantone,c.forTags.join('; '),c.material,c.bases.join(' + '),c.finish,c.partner,stageDef(c.stage).label,c.trials.length];
+      const base = [c.name,c.pantone,c.forTags.join('; '),c.material,c.bases.join(' + '),c.texture||'',c.finish,c.forecastSqft||'',c.forecastQuarter||'',c.partner,stageDef(c.stage).label,c.trials.length];
       if(!c.steps.length) rows.push([...base,'','','','','','','','']);
       c.steps.forEach(s=>rows.push([...base, phaseOf(s)==='rd'?'R&D':'Brand / production', s.activity, s.owner, s.start, s.end, days(s), s.status, s.notes]));
     });

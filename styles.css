@@ -673,3 +673,34 @@
   .dt-name b{font-size:14.5px;font-weight:650;color:var(--ink);}
   .dt-name .dv-code{margin:2px 0 0;font-size:11px;}
   .dt-row > td{vertical-align:middle;}
+  /* In Development 2: texture + forecasted order */
+  .dt select.dt-tex,.dt-fc select,.dt-fc input{font:inherit;font-size:12px;padding:3px 5px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);}
+  .dt select.dt-tex{margin-top:3px;font-weight:600;}
+  .dt select.unset,.dt-fc select.unset{color:var(--ink-soft);font-weight:400;border-style:dashed;}
+  .dt-base{font-weight:600;}
+  .dt-fc{min-width:130px;}
+  .dt-fc-row{display:flex;align-items:center;gap:4px;margin-bottom:4px;}
+  .dt-fc input{width:78px;text-align:right;}
+  .dt-fc input:placeholder-shown{border-style:dashed;}
+  .dt-fcbox{background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:12px 14px;margin-bottom:14px;}
+  .dt-fcbox.empty{font-size:12.5px;color:var(--ink-soft);box-shadow:none;border-style:dashed;background:transparent;}
+  .dt-fc-title{font-family:'Fraunces',serif;font-size:16px;font-weight:600;margin-bottom:8px;}
+  .dt-fc-title .dv-muted{font-family:'Inter',sans-serif;font-size:12px;font-weight:400;margin-left:6px;}
+  .dt-fc-scroll{overflow-x:auto;}
+  .dt-fc-table{min-width:520px;}
+  .dt-fc-table .r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .dt-fc-total td{background:var(--paper-soft);font-weight:600;}
+  .dt-fc-note{margin-top:6px;font-size:11.5px;}
+  /* Clickable summary cards (In Development tabs) */
+  button.dv-card{font:inherit;text-align:left;cursor:pointer;color:inherit;transition:border-color .15s,box-shadow .15s,background .15s;}
+  button.dv-card:hover{border-color:var(--saddle);}
+  button.dv-card.on{border-color:var(--ink);background:var(--ink);color:var(--paper);box-shadow:0 0 0 2px var(--ink);}
+  button.dv-card.on .lbl,button.dv-card.on .num{color:var(--paper);}
+  button.dv-card:focus-visible{outline:2px solid var(--saddle);outline-offset:2px;}
+  .dv-cardfilter{font-size:12.5px;color:var(--ink-soft);margin:-8px 0 12px;}
+  /* Sortable table headings */
+  .dt th.dt-sort{cursor:pointer;user-select:none;}
+  .dt th.dt-sort:hover{color:var(--ink);}
+  .dt th.dt-sort.on{color:var(--saddle-dark);}
+  .dt-arrow{margin-left:4px;font-size:9px;opacity:.45;}
+  .dt th.dt-sort.on .dt-arrow{opacity:1;}
