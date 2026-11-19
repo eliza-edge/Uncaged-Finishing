@@ -1,9 +1,13 @@
 /*
- * In Development tab.
+ * In Development tab (table).
  *
  * Every color in development is saved as its own record ("dev-<id>"), so two
  * teammates editing different colors never block each other. Shared lists
  * (base colors) are saved under "devSettings".
+ *
+ * Each color has one list of steps (color matching, trial rounds, Uncaged
+ * testing, brand review, ...), edited in the Progress pop-up. Older records
+ * that kept trial rounds and steps separately are merged when they load.
  *
  * Client data is never written into this file: the starting data is loaded
  * with More → Import, and lives only in the team database.
@@ -11,7 +15,6 @@
 (function(){
   const PREFIX = 'dev-';
   const SETTINGS_KEY = 'devSettings';
-  const PX = 7;                 // pixels per day on the timeline
   const DAY = 86400000;
 
   const STAGES = [
@@ -25,6 +28,18 @@
     {key:'failed_stopped',  label:'Failed – no more trials',         color:'#4A453F'},
     {key:'final',           label:'Approved – final',                color:'#4F7A4F'},
   ];
+  // The steps a color goes through, following the Color Development Gantt.
+  const STEP_TYPES = [
+    {key:'send',        label:'Send Pantone / swatch', owner:'uncaged'},
+    {key:'color_match', label:'Color matching',        owner:'partner'},
+    {key:'trial',       label:'Trial round',           owner:'partner', result:true, shade:true},
+    {key:'ship_in',     label:'Ship samples to Uncaged', owner:'partner'},
+    {key:'testing',     label:'Uncaged testing',       owner:'uncaged', result:true},
+    {key:'ship_brand',  label:'Ship samples to brand', owner:'uncaged'},
+    {key:'brand',       label:'Brand review',          owner:'brand', feedback:true},
+    {key:'other',       label:'Other',                 owner:''},
+  ];
+  const typeDef = k => STEP_TYPES.find(t=>t.key===k) || STEP_TYPES[STEP_TYPES.length-1];
   const BRAND_FEEDBACK = [
     {key:'',           label:'Not sent'},
     {key:'with_brand', label:'With brand'},
@@ -32,6 +47,7 @@
     {key:'changes',    label:'Changes requested'},
   ];
   const feedbackLabel = k => (BRAND_FEEDBACK.find(f=>f.key===(k||'')) || BRAND_FEEDBACK[0]).label;
+  const RESULTS = [{key:'', label:'Pending'}, {key:'pass', label:'Passed'}, {key:'fail', label:'Failed'}];
   const STEP_STATUSES = ['Not started','In progress','Complete','At risk','TBD'];
   const FINISHES = ['Matte','Satin','Gloss','High gloss'];
   const MATERIALS = ['Luxe','Signature'];
@@ -50,21 +66,19 @@
     {k:'deltaE',     label:'ΔE vs base'},
     {k:'L', label:'L*'}, {k:'a', label:'a*'}, {k:'b', label:'b*'},
   ];
-  // Standard R&D steps. Typical durations (days) come from the Finishing Steps tab.
-  // In Development ends when a color passes testing; brand approval, purchase
-  // orders and production runs belong to the future Production tab.
+  // Standard first steps for a new color. Typical durations (days) come from the Finishing Steps tab.
   const TEMPLATE = [
-    {a:p=>`Send Pantone / swatch to ${p}`,   o:()=>'Uncaged', days:4},
-    {a:p=>`${p}: lab color match`,           o:p=>p,          days:14},
-    {a:p=>`Ship samples from ${p} to Uncaged`, o:p=>p,        days:4},
-    {a:()=>'Uncaged testing',                o:()=>'Uncaged', days:7},
+    {type:'send',        days:4},
+    {type:'color_match', days:14},
+    {type:'ship_in',     days:4},
+    {type:'testing',     days:7},
   ];
-  // Steps saved before phases existed are sorted by name: brand and production
-  // work is kept for the Production tab, everything else is R&D.
+  // Brand and production work (purchase orders, trimming, spraying, shipping
+  // panels) is kept on the record for a future Production tab, but not shown.
   const PRODUCTION_RE = /approval|purchase order|\bPO\b|trim panel|spray|ship panels|inspect|swatch ?book|ship (a4s? )?to (?!uncaged)|ship samples to (?!uncaged)|ships? sample to (?!uncaged)/i;
   function phaseOf(s){ return s.phase || (PRODUCTION_RE.test(s.activity||'') ? 'production' : 'rd'); }
   function rdSteps(c){ return c.steps.filter(s=>phaseOf(s)==='rd'); }
-  // Only the approved final shade moves to Stock Offerings.
+  // Approved and stopped colors leave the list by default.
   const DONE_STAGES = ['final','failed_stopped'];
   // Textures match Stock Offerings and the inventory sheet (Freeport = Fine Grain, Denver = Pebble).
   const DEV_TEXTURES = ['Fine Grain','Pebble','Nappa'];
@@ -76,16 +90,16 @@
     if(current && !out.includes(current)) out.unshift(current);
     return out;
   }
-  const qSort = (a,b) => a.localeCompare(b);
   const DEFAULT_BASES = ['Coffee','Stone','Onyx','Natural','Off-White','Cherry'];
 
   let colors = [];
   let settings = {baseColors: DEFAULT_BASES.map(n=>({name:n, active:true}))};
   let loaded = false, loadError = '';
-  const ui = Object.assign({groupBy:'for', stage:'all', q:'', showDone:false, layout:'timeline', card:'', sortKey:'', sortDir:1}, readPrefs());
-  // Summary cards double as quick filters. Each card's test decides which colors it shows.
+  const ui = Object.assign({groupBy:'none', stage:'all', q:'', showDone:false, card:'', sortKey:'', sortDir:1}, readPrefs());
+  // Summary cards double as quick filters. "With brand" is waiting on the
+  // brand, so it is not counted as active R&D.
   const CARDS = [
-    {key:'active',  label:'Active in R&amp;D', test:c=>!DONE_STAGES.includes(c.stage) && c.stage!=='on_hold', title:'Not approved, stopped or on hold'},
+    {key:'active',  label:'Active in R&amp;D', test:c=>!DONE_STAGES.includes(c.stage) && c.stage!=='on_hold' && c.stage!=='brand_review', title:'Not with the brand, on hold, approved or stopped'},
     {key:'coating', label:'Coating trial',     test:c=>c.stage==='coating_trial'},
     {key:'testing', label:'Testing / passed',  test:c=>c.stage==='testing' || c.stage==='passed', title:'Testing in progress, or passed and not yet sent to the brand'},
     {key:'brand',   label:'With brand',        test:c=>c.stage==='brand_review'},
@@ -93,22 +107,20 @@
     {key:'hold',    label:'On hold',           test:c=>c.stage==='on_hold'},
     {key:'final',   label:'Approved → Stock Offerings', test:c=>c.stage==='final', cls:'dv-passed', title:'Final approved shades'},
   ];
-  // Two tabs share this data: "In Development" (timeline) and "In Development 2" (table).
-  const ROOTS = [{id:'devRoot', layout:'timeline'}, {id:'dev2Root', layout:'table'}];
-  let activeRoot = null;   // the tab the last click or change came from
-  const expanded = new Set();
+  const ROOT_ID = 'dev2Root';
   const selected = new Set();
-  let didInitialScroll = false;
-  let editing = null;      // color being edited in the modal (a copy)
-  let editingIsNew = false;
+  let editing = null, editingIsNew = false;   // color details pop-up
+  let stepEdit = null;                         // Progress pop-up: a copy of the color
 
   // ---------- helpers ----------
   function esc(v){
     return String(v == null ? '' : v).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   }
   function readPrefs(){
-    try { const p = JSON.parse(localStorage.getItem('uncaged-dev-prefs') || '{}'); return {groupBy:p.groupBy||'for'}; }
-    catch(e){ return {}; }
+    try {
+      const p = JSON.parse(localStorage.getItem('uncaged-dev-prefs') || '{}');
+      return {groupBy: ['base','partner','none'].includes(p.groupBy) ? p.groupBy : 'none'};
+    } catch(e){ return {}; }
   }
   function writePrefs(){
     try { localStorage.setItem('uncaged-dev-prefs', JSON.stringify({groupBy:ui.groupBy})); } catch(e){}
@@ -121,36 +133,85 @@
   function today(){ const t = new Date(); t.setHours(0,0,0,0); return t; }
   function days(s){ const a = pd(s.start), b = pd(s.end); return a && b ? Math.round((b-a)/DAY)+1 : ''; }
   function stageDef(k){ return STAGES.find(s=>s.key===k) || STAGES[0]; }
-  function ownerColor(o){
-    const k = (o||'').trim().toLowerCase();
-    if(!k) return '#A39A8C';
-    if(k.includes('pearl')) return '#8B5A34';
-    if(k.includes('bader')) return '#C99A3E';
-    if(k.includes('uncaged')) return '#6E8F6E';
-    if(k.includes('marketing')) return '#7A6FA0';
-    if(k.includes('milestone')) return '#2A2621';
-    return '#B65C4A'; // a brand or client
-  }
   function contrast(hex){
     const m = /^#?([0-9a-f]{6})$/i.exec(hex||''); if(!m) return '#2A2621';
     const n = parseInt(m[1],16), r=n>>16, g=(n>>8)&255, b=n&255;
     return (r*299+g*587+b*114)/1000 > 150 ? '#2A2621' : '#FFFFFF';
   }
+  const isHex = h => /^#[0-9a-f]{6}$/i.test(h||'');
   function live(){ return colors.filter(c=>!c.deletedAt); }
   function byId(id){ return colors.find(c=>c.id===id); }
+  function blankStep(type, extra){
+    const s = {id:uid(), phase:'rd', type, round:1, activity:typeDef(type).label, owner:'', start:'', end:'', status:'Not started',
+      result:'', brandFeedback:'', brandNote:'', hex:'', notes:''};
+    TEST_FIELDS.forEach(f=>{ s[f.k] = ''; });
+    return Object.assign(s, extra || {});
+  }
+  function guessType(text){
+    const t = String(text||'').toLowerCase();
+    if(/color match/.test(t)) return 'color_match';
+    if(/test/.test(t)) return 'testing';
+    if(/send pantone|swatch to/.test(t)) return 'send';
+    if(/(ship|send|receives).*(to uncaged|uncaged office)|receives samples/.test(t)) return 'ship_in';
+    if(/approval|approve/.test(t)) return 'brand';
+    if(/ship .*(samples|a4s?) to|ship a4s/.test(t)) return 'ship_brand';
+    return 'other';
+  }
+  // Older records kept trial rounds and steps apart. Merge them into one
+  // list of steps, ordered by date, without losing anything.
+  function migrate(c){
+    const steps = (Array.isArray(c.steps) ? c.steps : []).map(s=>Object.assign(blankStep(guessType(s.activity)), s, {
+      type: s.type || guessType(s.activity), phase: s.phase || phaseOf(s)}));
+    const prod = steps.filter(s=>s.phase==='production');
+    const rd = steps.filter(s=>s.phase!=='production');
+    let finalId = '';
+    (Array.isArray(c.trials) ? c.trials : []).forEach(t=>{
+      const n = Number(t.n) || 1;
+      const trial = blankStep('trial', {round:n, activity:'Trial round', owner:t.partner||c.partner||'', start:t.start||'', end:t.end||'',
+        status: t.result || (pd(t.end) && pd(t.end) < today()) ? 'Complete' : (t.start ? 'In progress' : 'Not started'),
+        result:t.result||'', hex:t.hex||'', notes:t.notes||''});
+      TEST_FIELDS.forEach(f=>{ trial[f.k] = t[f.k] || ''; });
+      rd.push(trial);
+      if(String(c.finalTrial) === String(t.n)) finalId = trial.id;
+      if(t.brandFeedback){
+        rd.push(blankStep('brand', {round:n, activity:'Brand review', owner:c.forTags[0]||'Brand', start:'', end:'', _last:true,
+          status: t.brandFeedback==='with_brand' ? 'In progress' : 'Complete', brandFeedback:t.brandFeedback, brandNote:t.brandNote||''}));
+      }
+    });
+    // Dated steps in date order; undated steps keep their place after the dated one before them.
+    let lastKey = '';
+    // Brand reviews carried over from old trial rounds have no dates; they go last.
+    const keyed = rd.map((s,i)=>{ const k = s.start || s.end; if(k) lastKey = k; return {s, k: (s._last ? '~' : (k || lastKey)) + '|' + String(i).padStart(4,'0')}; });
+    rd.forEach(s=>{ delete s._last; });
+    keyed.sort((a,b)=>a.k < b.k ? -1 : a.k > b.k ? 1 : 0);
+    let round = 1;
+    const ordered = keyed.map(x=>x.s).map(s=>{ if(s.type==='trial') round = Number(s.round)||round; else s.round = round; return s; });
+    c.steps = [...ordered, ...prod];
+    if(finalId) c.finalStepId = finalId;
+    c.trials = [];
+    delete c.finalTrial;
+    c.v = 2;
+  }
   function normalize(c){
     c.forTags = Array.isArray(c.forTags) ? c.forTags : [];
     c.bases = Array.isArray(c.bases) ? c.bases : [];
-    c.trials = Array.isArray(c.trials) ? c.trials : [];
-    c.steps = Array.isArray(c.steps) ? c.steps : [];
-    c.steps.forEach(s=>{ if(!s.id) s.id = uid(); if(!s.phase) s.phase = phaseOf(s); });
+    if(c.v !== 2) migrate(c);
+    c.steps.forEach(s=>{ if(!s.id) s.id = uid(); if(!s.phase) s.phase = phaseOf(s); if(!s.type) s.type = guessType(s.activity); });
     if(typeof c.order !== 'number') c.order = Date.now();
     return c;
   }
+  function maxRound(c){ return rdSteps(c).reduce((m,s)=>Math.max(m, Number(s.round)||0), 0); }
+  function trialCount(c){ return rdSteps(c).filter(s=>s.type==='trial').length; }
   function currentStep(c){
     const st = rdSteps(c);
     return st.find(s=>s.status==='In progress' || s.status==='At risk') ||
-           st.find(s=>s.status!=='Complete');
+           st.find(s=>s.status==='Not started' || s.status==='TBD') || st[st.length-1];
+  }
+  function resultSteps(c){ return rdSteps(c).filter(s=>typeDef(s.type).result); }
+  function latestResult(c){ const r = resultSteps(c); return r.filter(s=>s.result).pop() || r[r.length-1]; }
+  function finalShade(c){
+    const st = rdSteps(c);
+    return st.find(s=>s.id===c.finalStepId) || st.filter(s=>s.type==='trial').pop() || latestResult(c) || null;
   }
   function activeBases(){ return settings.baseColors.filter(b=>b.active).map(b=>b.name); }
   function allForTags(){
@@ -159,8 +220,8 @@
     return [...set].sort((a,b)=>a.localeCompare(b));
   }
   function allOwners(){
-    const set = new Set(['Pearl','Bader','Uncaged','Marketing','Milestone']);
-    live().forEach(c=>{ c.steps.forEach(s=>s.owner && set.add(s.owner)); c.forTags.forEach(t=>set.add(t)); });
+    const set = new Set(['Pearl','Bader','Uncaged']);
+    live().forEach(c=>{ c.steps.forEach(s=>s.owner && set.add(s.owner)); c.forTags.forEach(t=>set.add(t)); c.partner && set.add(c.partner); });
     return [...set].sort((a,b)=>a.localeCompare(b));
   }
   function allPartners(){
@@ -168,6 +229,11 @@
     live().forEach(c=>c.partner && set.add(c.partner));
     return [...set].sort((a,b)=>a.localeCompare(b));
   }
+  function ownerFor(type, c){
+    const o = typeDef(type).owner;
+    return o === 'partner' ? (c.partner||'') : o === 'uncaged' ? 'Uncaged' : o === 'brand' ? (c.forTags[0]||'Brand') : '';
+  }
+  function hasPrio(c){ return !!(window.prioData && window.prioData.has(c.id)); }
 
   // ---------- storage ----------
   async function load(){
@@ -191,14 +257,10 @@
     c.updatedAt = new Date().toISOString();
     await window.storage.set(PREFIX + c.id, JSON.stringify(c));
   }
-  async function saveSettings(){
-    await window.storage.set(SETTINGS_KEY, JSON.stringify(settings));
-  }
-  function saveQuietly(c){
-    save(c).catch(e=>console.error('Save failed', e));
-  }
+  async function saveSettings(){ await window.storage.set(SETTINGS_KEY, JSON.stringify(settings)); }
+  function saveQuietly(c){ save(c).catch(e=>console.error('Save failed', e)); }
 
-  // ---------- grouping & filtering ----------
+  // ---------- filtering, grouping, sorting ----------
   function matches(c){
     const card = CARDS.find(x=>x.key===ui.card);
     if(card){ if(!card.test(c)) return false; }
@@ -208,89 +270,79 @@
     }
     const q = ui.q.trim().toLowerCase();
     if(!q) return true;
-    return [c.name, c.pantone, c.partner, c.material, c.finish, c.notes, ...c.forTags, ...c.bases]
+    return [c.name, c.pantone, c.partner, c.material, c.finish, c.texture, c.notes, ...c.forTags, ...c.bases]
       .some(v => (v||'').toLowerCase().includes(q));
   }
   function groups(){
     const list = live().filter(matches).sort((a,b)=>a.order-b.order);
+    if(ui.groupBy === 'none') return [['', list]];
     const map = new Map();
-    const push = (k,c) => { if(!map.has(k)) map.set(k, []); map.get(k).push(c); };
-    const NONE = {for:'No brand or collection yet', base:'No base set', partner:'No partner set'};
+    const NONE = ui.groupBy === 'base' ? 'No base set' : 'No partner set';
     list.forEach(c=>{
-      if(ui.groupBy === 'none') return push('All colors', c);
-      let keys = ui.groupBy==='for' ? c.forTags : ui.groupBy==='base' ? c.bases : (c.partner ? [c.partner] : []);
-      if(!keys.length) keys = [NONE[ui.groupBy]];
-      keys.forEach(k=>push(k,c));
+      let keys = ui.groupBy==='base' ? c.bases : (c.partner ? [c.partner] : []);
+      if(!keys.length) keys = [NONE];
+      keys.forEach(k=>{ if(!map.has(k)) map.set(k, []); map.get(k).push(c); });
     });
-    const entries = [...map.entries()];
-    entries.sort((a,b)=>{
-      const an = Object.values(NONE).includes(a[0]), bn = Object.values(NONE).includes(b[0]);
-      if(an !== bn) return an ? 1 : -1;
-      if(ui.groupBy === 'base'){
-        const order = settings.baseColors.map(x=>x.name);
-        return (order.indexOf(a[0])+1||99) - (order.indexOf(b[0])+1||99);
-      }
-      return 0; // keep first-appearance order
+    const order = settings.baseColors.map(x=>x.name);
+    return [...map.entries()].sort((a,b)=>{
+      if((a[0]===NONE) !== (b[0]===NONE)) return a[0]===NONE ? 1 : -1;
+      return ui.groupBy==='base' ? (order.indexOf(a[0])+1||99) - (order.indexOf(b[0])+1||99) : a[0].localeCompare(b[0]);
     });
-    return entries;
   }
-
-  function range(){
-    const t = today();
-    let min = addD(t,-28), max = addD(t,84);
-    live().filter(matches).forEach(c=>{
-      rdSteps(c).forEach(s=>{ [pd(s.start),pd(s.end)].forEach(d=>{ if(d){ if(d<min) min=d; if(d>max) max=d; } }); });
-      c.trials.forEach(s=>{ [pd(s.start),pd(s.end)].forEach(d=>{ if(d){ if(d<min) min=d; if(d>max) max=d; } }); });
-    });
-    const start = addD(min, -((min.getDay()+6)%7));   // back to Monday
-    const end = addD(max, 21);
-    return {start, end, width: Math.round((end-start)/DAY)*PX};
+  const RESULT_ORDER = {pass:0, '':1, fail:2};
+  function sortValue(c, key){
+    switch(key){
+      case 'color':    return (c.name||'').toLowerCase();
+      case 'partner':  return (c.partner||'').toLowerCase();
+      case 'stage':    return STAGES.findIndex(x=>x.key===c.stage);
+      case 'project':  return (c.forTags[0]||'').toLowerCase();
+      case 'base':     return [c.bases.join(' + '), c.texture].filter(Boolean).join(' ').toLowerCase();
+      case 'progress': { const s = currentStep(c); return s ? String(maxRound(c)).padStart(3,'0') + String(STEP_TYPES.findIndex(t=>t.key===s.type)).padStart(2,'0') : ''; }
+      case 'testing':  { const r = latestResult(c); return r ? RESULT_ORDER[r.result||''] : ''; }
+      case 'forecast': return c.forecastQuarter ? c.forecastQuarter + ' ' + String(Number(c.forecastSqft)||0).padStart(9,'0') : (Number(c.forecastSqft) ? '~' + String(Number(c.forecastSqft)).padStart(9,'0') : '');
+      case 'prio':     return hasPrio(c) ? 0 : 1;
+    }
+    return '';
   }
-  function xOf(d, r){ return Math.round((d - r.start)/DAY)*PX; }
-  function bar(start, end, color, cls, title, r){
-    const a = pd(start), b = pd(end) || a;
-    if(!a) return '';
-    const s = a <= b ? a : b, e = a <= b ? b : a;
-    const left = xOf(s,r), width = Math.max(PX, xOf(e,r) - left + PX);
-    return `<div class="dv-bar ${cls||''}" style="left:${left}px;width:${width}px;background:${color}" title="${esc(title)}"></div>`;
+  function sortRows(list){
+    if(!ui.sortKey) return list;
+    return list.slice().sort((a,b)=>{
+      const x = sortValue(a, ui.sortKey), y = sortValue(b, ui.sortKey);
+      const ex = x === '' || x === -1, ey = y === '' || y === -1;
+      if(ex !== ey) return ex ? 1 : -1;
+      if(x < y) return -ui.sortDir;
+      if(x > y) return ui.sortDir;
+      return (a.order||0) - (b.order||0);
+    });
   }
 
   // ---------- rendering ----------
-  function render(){ ROOTS.forEach(r=>renderRoot(r.id, r.layout)); }
-  function renderRoot(id, layout){
-    const root = document.getElementById(id);
+  function render(){
+    const root = document.getElementById(ROOT_ID);
     if(!root) return;
-    ui.layout = layout;
-    const scroller = root.querySelector('.dv-scroll');
-    const keepScroll = scroller ? scroller.scrollLeft : null;
     const focusKey = document.activeElement && root.contains(document.activeElement) ? document.activeElement.dataset.fk : null;
-
     if(loadError){ root.innerHTML = `<div class="dv-empty">${esc(loadError)}</div>`; return; }
     if(!loaded){ root.innerHTML = `<div class="dv-empty">Loading colors in development…</div>`; return; }
-
-    const r = range();
     const gs = groups();
     root.innerHTML = `
       ${summaryHTML()}
       <div class="dv-toolbar">
         <div class="dv-tools-left">
-          <input type="search" class="dv-search" placeholder="Search colors, brands, Pantone…" value="${esc(ui.q)}" data-act="search" data-fk="search">
+          <input type="search" class="dv-search" placeholder="Search colors, projects, Pantone…" value="${esc(ui.q)}" data-act="search" data-fk="search">
           <label class="dv-inline">Group by
             <select data-act="groupBy">
-              ${[['for','Brand / collection'],['base','Base color'],['partner','Partner'],['none','No grouping']]
-                .map(([k,l])=>`<option value="${k}" ${ui.groupBy===k?'selected':''}>${l}</option>`).join('')}
+              ${[['none','No grouping'],['base','Base color'],['partner','Partner']].map(([k,l])=>`<option value="${k}" ${ui.groupBy===k?'selected':''}>${l}</option>`).join('')}
             </select>
           </label>
           <label class="dv-inline">Stage
             <select data-act="stageFilter">
-              <option value="all">All active stages</option>
+              <option value="all">All except approved &amp; stopped</option>
               ${STAGES.map(s=>`<option value="${s.key}" ${ui.stage===s.key?'selected':''}>${esc(s.label)} (${live().filter(c=>c.stage===s.key).length})</option>`).join('')}
             </select>
           </label>
           <label class="dv-inline"><input type="checkbox" data-act="showDone" ${ui.showDone?'checked':''}> Show approved &amp; stopped colors</label>
         </div>
         <div class="dv-tools-right">
-          <button class="btn secondary" data-act="expandAll">${expanded.size ? 'Collapse all' : 'Expand all'}</button>
           <div class="dv-menu">
             <button class="btn secondary" data-act="menu">More ▾</button>
             <div class="dv-menu-list" hidden>
@@ -305,58 +357,53 @@
         </div>
       </div>
       ${bulkHTML()}
-      ${ui.layout === 'table' ? (live().length === 0 ? emptyHTML() : tableHTML(gs)) : `
-      <div class="legend dv-legend">
-        ${[['Pearl','#8B5A34'],['Bader','#C99A3E'],['Uncaged','#6E8F6E'],['Brand / client','#B65C4A'],['Marketing','#7A6FA0']]
-          .map(([l,c])=>`<span class="item"><span class="dot" style="background:${c}"></span>${l}</span>`).join('')}
-        <span class="item"><span class="dv-trial-dot"></span>Trial round</span>
-        <span class="item"><span class="line-swatch" style="border-color:var(--rose)"></span>Today</span>
-      </div>
-      ${live().length === 0 ? emptyHTML() : `
-      <div class="dv-board"><div class="dv-scroll"><div class="dv-inner" style="width:calc(var(--dv-left) + ${r.width}px)">
-        ${headerHTML(r)}
-        ${gs.map(([name, list])=>`
-          <div class="dv-row dv-group-row"><div class="dv-left dv-group-label">${esc(name)} <span class="dv-count">${list.length}</span></div><div class="dv-track" style="width:${r.width}px"></div></div>
-          ${list.map(c=>colorHTML(c, r, name)).join('')}
-        `).join('') || `<div class="dv-row"><div class="dv-left dv-muted">No colors match these filters.${!ui.showDone ? ' Approved and stopped colors are hidden. Turn on “Show approved &amp; stopped colors” to see them.' : ''}</div></div>`}
-        <div class="dv-today" style="left:calc(var(--dv-left) + ${xOf(today(), r) + PX/2}px)"></div>
-      </div></div></div>`}`}
-    `;
-
-    const sc = root.querySelector('.dv-scroll');
-    if(sc){
-      if(!didInitialScroll && sc.clientWidth > 0){
-        sc.scrollLeft = Math.max(0, xOf(today(), r) - 240);   // open on this week
-        didInitialScroll = true;
-      } else if(keepScroll !== null) sc.scrollLeft = keepScroll;
-    }
+      ${live().length === 0 ? emptyHTML() : tableHTML(gs)}`;
     if(focusKey){
       const el = root.querySelector(`[data-fk="${CSS.escape(focusKey)}"]`);
-      if(el){ el.focus(); if(el.setSelectionRange && el.type==='search') el.setSelectionRange(el.value.length, el.value.length); }
+      if(el){ el.focus(); if(el.type==='search') el.setSelectionRange(el.value.length, el.value.length); }
     }
-    root.querySelectorAll('textarea.dv-notes').forEach(autoGrow);
+    const all = root.querySelector('[data-act=selectAll]');
+    if(all){ const vis = visibleIds(); all.indeterminate = vis.some(id=>selected.has(id)) && !vis.every(id=>selected.has(id)); }
+  }
+  function visibleIds(){ return [...new Set(groups().flatMap(([,l])=>l.map(c=>c.id)))]; }
+
+  function summaryHTML(){
+    const L = live();
+    return `<div class="summary dv-cards">
+      ${CARDS.map(k=>`<button type="button" class="summary-card dv-card ${k.cls||''} ${ui.card===k.key?'on':''}" data-act="card" data-k="${k.key}"
+        title="${esc((k.title ? k.title + '. ' : '') + (ui.card===k.key ? 'Click again to show all' : 'Click to show only these'))}" aria-pressed="${ui.card===k.key}">
+        <div class="num">${L.filter(k.test).length}</div><div class="lbl">${k.label}</div></button>`).join('')}
+    </div>
+    ${ui.card ? `<div class="dv-cardfilter">Showing only <b>${CARDS.find(k=>k.key===ui.card).label}</b> <button class="linkish" data-act="card" data-k="${ui.card}">Show all</button></div>` : ''}`;
+  }
+  function emptyHTML(){
+    return `<div class="dv-empty"><p><b>No colors in development yet.</b></p>
+      <p>Add one with <b>+ New color</b>, or load the starting data with <b>More → Import from file…</b></p></div>`;
   }
 
-  // ----- Table layout: one row per color, a column for each thing we measure -----
-  const RESULT = {pass:['Passed','ok'], fail:['Failed','bad'], '':['Pending','wait']};
-  const FEEDBACK_CLS = {approved:'ok', changes:'bad', with_brand:'wait', '':'none'};
-  function latestTrial(c){ return c.trials[c.trials.length-1]; }
+  const RESULT_PILL = {pass:['Passed','ok'], fail:['Failed','bad'], '':['Pending','wait']};
   function testBits(t){ return TEST_FIELDS.filter(f=>t && t[f.k]!=='' && t[f.k]!=null).slice(0,3).map(f=>`${f.label} ${esc(t[f.k])}`).join(' · '); }
 
   function tableHTML(gs){
-    const head = ['Color','Partner','Stage','Project','Base &amp; texture','Trial','Testing','Brand review','Forecasted order','Next step',''];
-    const keys = ['color','partner','stage','project','base','trial','testing','brand','forecast','next',''];
+    const cols = [['color','Color'],['partner','Partner'],['stage','Stage'],['project','Project'],['base','Base &amp; texture'],
+      ['progress','Progress'],['testing','Testing'],['forecast','Forecasted order'],['prio','Priorities'],['','']];
+    const vis = visibleIds();
+    const allOn = vis.length && vis.every(id=>selected.has(id));
+    const head = cols.map(([k,h],i)=>{
+      if(!k) return '<th></th>';
+      const sortBtn = `<span class="dt-sort-lbl" data-act="sort" data-k="${k}">${h}<span class="dt-arrow">${ui.sortKey===k ? (ui.sortDir===1?'▲':'▼') : '↕'}</span></span>`;
+      return `<th class="dt-sort ${ui.sortKey===k?'on':''}" aria-sort="${ui.sortKey===k ? (ui.sortDir===1?'ascending':'descending') : 'none'}" title="Sort by ${h}">
+        ${i===0 ? `<input type="checkbox" class="dv-check" data-act="selectAll" ${allOn?'checked':''} title="Select all shown">` : ''}${sortBtn}</th>`;
+    }).join('');
     const body = gs.map(([name, list])=>`
-      <tr class="dt-group"><td colspan="${head.length}">${esc(name)} <span class="dv-count">${list.length}</span></td></tr>
+      ${name ? `<tr class="dt-group"><td colspan="${cols.length}">${esc(name)} <span class="dv-count">${list.length}</span></td></tr>` : ''}
       ${sortRows(list).map(c=>rowHTML(c, name)).join('')}`).join('');
     return `${forecastHTML()}<div class="dt-wrap"><table class="dt">
-      <thead><tr>${head.map((h,i)=> keys[i]
-        ? `<th class="dt-sort ${ui.sortKey===keys[i]?'on':''}" data-act="sort" data-k="${keys[i]}" title="Sort by ${h}"
-             aria-sort="${ui.sortKey===keys[i] ? (ui.sortDir===1?'ascending':'descending') : 'none'}">${h}<span class="dt-arrow">${ui.sortKey===keys[i] ? (ui.sortDir===1?'▲':'▼') : '↕'}</span></th>`
-        : '<th></th>').join('')}</tr></thead>
-      <tbody>${body || `<tr><td colspan="${head.length}" class="dv-muted" style="padding:16px">No colors match these filters.${!ui.showDone ? ' Approved and stopped colors are hidden. Turn on “Show approved &amp; stopped colors” to see them.' : ''}</td></tr>`}</tbody>
+      <thead><tr>${head}</tr></thead>
+      <tbody>${list0(gs) ? body : `<tr><td colspan="${cols.length}" class="dv-muted" style="padding:16px">No colors match these filters.${!ui.showDone ? ' Approved and stopped colors are hidden. Turn on “Show approved &amp; stopped colors” to see them.' : ''}</td></tr>`}</tbody>
     </table></div>`;
   }
+  const list0 = gs => gs.some(([,l])=>l.length);
 
   // Forecasted base material needs: forecast sq ft totalled by base, material and texture, per quarter.
   function forecastHTML(){
@@ -371,7 +418,7 @@
       const r = rows.get(k); const n = Number(c.forecastSqft);
       r.byQ[q] = (r.byQ[q]||0) + n; r.total += n; r.colors.push(c.name);
     });
-    const qs = [...quarters].sort((a,b)=> a==='No quarter' ? 1 : b==='No quarter' ? -1 : qSort(a,b));
+    const qs = [...quarters].sort((a,b)=> a==='No quarter' ? 1 : b==='No quarter' ? -1 : a.localeCompare(b));
     const fmtN = n => Math.round(n).toLocaleString('en-US');
     const grand = [...rows.values()].reduce((a,r)=>a+r.total,0);
     return `<div class="dt-fcbox">
@@ -389,53 +436,32 @@
     </div>`;
   }
 
-  // Sorting by a column heading. Rows stay inside their group; blanks always sort last.
-  const RESULT_ORDER = {pass:0, '':1, fail:2};
-  const FEEDBACK_ORDER = {approved:0, with_brand:1, changes:2, '':3};
-  function sortValue(c, key){
-    const t = latestTrial(c), cur = currentStep(c);
-    switch(key){
-      case 'color':    return (c.name||'').toLowerCase();
-      case 'partner':  return (c.partner||'').toLowerCase();
-      case 'stage':    return STAGES.findIndex(x=>x.key===c.stage);
-      case 'project':  return (c.forTags[0]||'').toLowerCase();
-      case 'base':     return [c.bases.join(' + '), c.texture].filter(Boolean).join(' ').toLowerCase();
-      case 'trial':    return t ? Number(t.n)||c.trials.length : '';
-      case 'testing':  return t ? RESULT_ORDER[t.result||''] : '';
-      case 'brand':    return t && c.forTags.length ? FEEDBACK_ORDER[t.brandFeedback||''] : '';
-      case 'forecast': return c.forecastQuarter ? c.forecastQuarter + ' ' + String(Number(c.forecastSqft)||0).padStart(9,'0') : (Number(c.forecastSqft) ? '~' + String(Number(c.forecastSqft)).padStart(9,'0') : '');
-      case 'next':     return cur && cur.end ? cur.end : '';
-    }
-    return '';
-  }
-  function sortRows(list){
-    if(!ui.sortKey) return list;
-    return list.slice().sort((a,b)=>{
-      const x = sortValue(a, ui.sortKey), y = sortValue(b, ui.sortKey);
-      const ex = x === '' || x === -1, ey = y === '' || y === -1;
-      if(ex !== ey) return ex ? 1 : -1;
-      if(x < y) return -ui.sortDir;
-      if(x > y) return ui.sortDir;
-      return (a.order||0) - (b.order||0);
-    });
+  function progressHTML(c){
+    const st = rdSteps(c), cur = currentStep(c);
+    if(!st.length) return `<button class="dt-prog empty" data-act="steps" data-c="${c.id}">No steps yet <span class="dt-prog-add">+ Add</span></button>`;
+    const late = cur && cur.end && pd(cur.end) < today() && cur.status !== 'Complete';
+    const stCls = cur.status==='Complete' ? 'ok' : cur.status==='At risk' ? 'bad' : cur.status==='In progress' ? 'wait' : 'none';
+    return `<button class="dt-prog" data-act="steps" data-c="${c.id}" title="Open all ${st.length} steps">
+      <span class="dt-prog-round">Round ${cur.round || 1}${maxRound(c) > (cur.round||1) ? ` <span class="dv-muted">of ${maxRound(c)}</span>` : ''}</span>
+      <span class="dt-prog-step">${esc(cur.activity || typeDef(cur.type).label)}</span>
+      <span class="dt-prog-meta"><span class="dt-pill ${stCls}">${esc(cur.status)}</span>
+        ${cur.start||cur.end ? `<span class="${late?'dt-late':'dv-muted'}">${esc(fmt(cur.start)||'?')} – ${esc(fmt(cur.end)||'…')}</span>` : ''}</span>
+      <span class="dt-prog-count">${st.length} step${st.length===1?'':'s'} · open</span>
+    </button>`;
   }
 
   function rowHTML(c, gname){
-    const open = expanded.has(c.id);
     const st = stageDef(c.stage);
-    const t = latestTrial(c);
-    const fails = c.trials.slice(0,-1).filter(x=>x.result==='fail').length;
-    const cur = currentStep(c);
-    const due = cur && pd(cur.end);
-    const late = due && due < today() && cur.status !== 'Complete';
-    const res = t ? RESULT[t.result||''] : null;
+    const r = latestResult(c);
+    const fails = resultSteps(c).filter(s=>s.result==='fail' && s!==r).length;
+    const res = r ? RESULT_PILL[r.result||''] : null;
     const fk = `${gname}|${c.id}`;
-    let html = `<tr class="dt-row ${open?'open':''} ${selected.has(c.id)?'is-selected':''}">
+    const prio = hasPrio(c);
+    return `<tr class="dt-row ${selected.has(c.id)?'is-selected':''}">
       <td class="dt-color"><div class="dt-color-in">
-        <input type="checkbox" class="dv-check" data-act="select" data-c="${c.id}" ${selected.has(c.id)?'checked':''} title="Select for bulk update">
-        <button class="dv-caret" data-act="toggle" data-c="${c.id}" aria-label="Show details">${open?'▾':'▸'}</button>
-        <span class="dt-swatch" data-act="toggle" data-c="${c.id}" style="background:${esc(c.hex||'#ddd')}"></span>
-        <span class="dt-name" data-act="toggle" data-c="${c.id}"><b>${esc(c.name||'Untitled')}</b>${c.pantone ? `<span class="dv-code">${esc(c.pantone)}</span>` : ''}</span>
+        <input type="checkbox" class="dv-check" data-act="select" data-c="${c.id}" ${selected.has(c.id)?'checked':''} title="Select to update together">
+        <span class="dt-swatch" data-act="edit" data-c="${c.id}" style="background:${esc(c.hex||'#ddd')}" title="Edit color details"></span>
+        <span class="dt-name" data-act="edit" data-c="${c.id}" title="Edit color details"><b>${esc(c.name||'Untitled')}</b>${c.pantone ? `<span class="dv-code">${esc(c.pantone)}</span>` : ''}</span>
       </div></td>
       <td>${esc(c.partner||'—')}</td>
       <td><select class="dv-stage" data-c="${c.id}" data-f="stage" data-fk="${esc(fk)}|stage" style="background:${st.color};color:${contrast(st.color)}">
@@ -446,217 +472,53 @@
           <option value="">Texture?</option>${[...new Set([...DEV_TEXTURES, ...(c.texture ? [c.texture] : [])])].map(x=>`<option ${c.texture===x?'selected':''}>${esc(x)}</option>`).join('')}
         </select></div>
         ${[c.material, c.finish].filter(Boolean).length ? `<div class="dv-muted">${esc([c.material, c.finish].filter(Boolean).join(' · '))}</div>` : ''}</td>
-      <td>${t ? `<b>Trial ${esc(t.n)}</b><div class="dv-muted dt-nowrap">${t.start||t.end ? `${esc(fmt(t.start)||'?')} – ${esc(fmt(t.end)||'…')}` : 'No dates'}</div>` : '<span class="dv-muted">Not started</span>'}</td>
-      <td>${res ? `<span class="dt-pill ${res[1]}">${res[0]}</span>${fails ? `<div class="dv-muted">${fails} earlier fail${fails===1?'':'s'}</div>` : ''}${testBits(t) ? `<div class="dv-muted">${testBits(t)}</div>` : ''}` : '<span class="dv-muted">—</span>'}</td>
-      <td>${t && c.forTags.length ? `<span class="dt-pill ${FEEDBACK_CLS[t.brandFeedback||'']}">${esc(feedbackLabel(t.brandFeedback))}</span>${t.brandNote ? `<div class="dv-muted">“${esc(t.brandNote)}”</div>` : ''}` : '<span class="dv-muted">—</span>'}</td>
+      <td class="dt-progcell">${progressHTML(c)}</td>
+      <td>${res ? `<span class="dt-pill ${res[1]}">${res[0]}</span>${fails ? `<div class="dv-muted">${fails} earlier fail${fails===1?'':'s'}</div>` : ''}${testBits(r) ? `<div class="dv-muted">${testBits(r)}</div>` : ''}` : '<span class="dv-muted">—</span>'}</td>
       <td class="dt-fc">
         <div class="dt-fc-row"><input type="number" min="0" step="10" inputmode="numeric" placeholder="—" value="${esc(c.forecastSqft||'')}" data-c="${c.id}" data-f="forecastSqft" data-fk="${esc(fk)}|fsq" title="Forecasted order, sq ft"><span class="dv-muted">sq ft</span></div>
         <select data-c="${c.id}" data-f="forecastQuarter" data-fk="${esc(fk)}|fq" title="Quarter of the forecasted order" class="${c.forecastQuarter ? '' : 'unset'}">
           <option value="">Quarter?</option>${quarterOptions(c.forecastQuarter).map(q=>`<option ${c.forecastQuarter===q?'selected':''}>${q}</option>`).join('')}
         </select></td>
-      <td class="dt-next">${cur ? `${esc(cur.activity)}<div class="${late?'dt-late':'dv-muted'}">${esc(cur.owner||'')}${cur.end ? ` · ${late?'was due':'due'} ${esc(fmt(cur.end))}` : ''}</div>` : `<span class="dv-muted">${rdSteps(c).length ? 'R&amp;D steps complete' : 'No steps yet'}</span>`}</td>
+      <td class="dt-prio"><label class="dt-prio-lbl ${prio?'on':''}" title="${prio ? 'On Finishing Priorities. Untick to remove it' : 'Send this color to Finishing Priorities'}">
+        <input type="checkbox" data-act="prio" data-c="${c.id}" data-fk="${esc(fk)}|prio" ${prio?'checked':''} ${window.prioData ? '' : 'disabled'}>${prio ? 'On list' : 'Add'}</label></td>
       <td><button class="icon-btn" data-act="edit" data-c="${c.id}" title="Edit color details">✎</button></td>
     </tr>`;
-    if(open) html += `<tr class="dt-detail"><td colspan="11">${detailHTML(c, fk)}</td></tr>`;
-    return html;
   }
 
-  function detailHTML(c, fk){
-    const steps = rdSteps(c);
-    const prod = c.steps.length - steps.length;
-    return `<div class="dt-detail-grid">
-      <div>
-        <div class="dv-detail-head">Trial rounds</div>
-        ${c.trials.length ? `<table class="dt-mini"><thead><tr><th>Round</th><th>Partner</th><th>Dates</th><th>Testing</th><th>Brand</th><th>Test data</th></tr></thead><tbody>
-          ${c.trials.map(t=>{ const r = RESULT[t.result||'']; return `<tr>
-            <td>${t.hex ? `<span class="dv-round-swatch" style="background:${esc(t.hex)}"></span>` : ''}${esc(t.n)}${String(c.finalTrial)===String(t.n) ? ' <span class="dv-final-badge">Final</span>' : ''}</td>
-            <td>${esc(t.partner||'')}</td><td>${esc(fmt(t.start)||'?')} – ${esc(fmt(t.end)||'…')}</td>
-            <td><span class="dt-pill ${r[1]}">${r[0]}</span></td>
-            <td>${c.forTags.length ? `<span class="dt-pill ${FEEDBACK_CLS[t.brandFeedback||'']}">${esc(feedbackLabel(t.brandFeedback))}</span>${t.brandNote ? ` <span class="dv-muted">“${esc(t.brandNote)}”</span>` : ''}` : '—'}</td>
-            <td class="dv-muted">${testBits(t) || '—'}${t.notes ? `<div>${esc(t.notes)}</div>` : ''}</td></tr>`; }).join('')}
-        </tbody></table>` : '<div class="dv-muted">No trial rounds yet.</div>'}
-        <div class="dv-detail-links"><button class="linkish" data-act="edit" data-c="${c.id}" data-tab="trials">Add or edit trial rounds</button>
-          ${c.photosUrl ? ` · <a href="${esc(c.photosUrl)}" target="_blank" rel="noopener">Photos</a>` : ''}</div>
-        ${c.notes ? `<div class="dv-color-notes">${esc(c.notes)}</div>` : ''}
-      </div>
-      <div>
-        <div class="dv-detail-head">R&amp;D steps</div>
-        <div class="dt-steps">${steps.map((s,i)=>{ const k = `${fk}|${s.id}`; return `<div class="dt-step">
-          <select class="dv-status st-${esc((s.status||'').replace(/\s+/g,'-').toLowerCase())}" data-c="${c.id}" data-s="${s.id}" data-f="status" data-fk="${esc(k)}|status">
-            ${STEP_STATUSES.map(x=>`<option ${s.status===x?'selected':''}>${x}</option>`).join('')}</select>
-          <input class="dt-act" value="${esc(s.activity)}" data-c="${c.id}" data-s="${s.id}" data-f="activity" data-fk="${esc(k)}|activity" placeholder="Step">
-          <input class="dt-owner" list="dvOwnerList" value="${esc(s.owner)}" data-c="${c.id}" data-s="${s.id}" data-f="owner" data-fk="${esc(k)}|owner" placeholder="Owner">
-          <input type="date" value="${esc(s.start)}" data-c="${c.id}" data-s="${s.id}" data-f="start" data-fk="${esc(k)}|start" title="Start">
-          <input type="date" value="${esc(s.end)}" data-c="${c.id}" data-s="${s.id}" data-f="end" data-fk="${esc(k)}|end" title="End">
-          <span class="dt-stepbtns">
-            <button class="icon-btn" data-act="up" data-c="${c.id}" data-s="${s.id}" title="Move up" ${i===0?'disabled':''}>↑</button>
-            <button class="icon-btn" data-act="down" data-c="${c.id}" data-s="${s.id}" title="Move down" ${i===steps.length-1?'disabled':''}>↓</button>
-            <button class="icon-btn" data-act="delStep" data-c="${c.id}" data-s="${s.id}" title="Delete step">✕</button></span>
-          <textarea class="dv-notes dt-notes" rows="1" placeholder="Notes" data-c="${c.id}" data-s="${s.id}" data-f="notes" data-fk="${esc(k)}|notes">${esc(s.notes)}</textarea>
-        </div>`; }).join('')}</div>
-        <button class="linkish" data-act="addStep" data-c="${c.id}">+ Add step</button>
-        ${steps.length === 0 ? ` · <button class="linkish" data-act="addTemplate" data-c="${c.id}">Add the standard R&amp;D steps</button>` : ''}
-        ${prod ? `<div class="dv-muted dv-prod-note">${prod} brand / production step${prod===1?'':'s'} saved for the future Production tab.</div>` : ''}
-      </div>
-    </div>`;
-  }
-
-  function summaryHTML(){
-    const L = live();
-    return `<div class="summary dv-cards">
-      ${CARDS.map(k=>`<button type="button" class="summary-card dv-card ${k.cls||''} ${ui.card===k.key?'on':''}" data-act="card" data-k="${k.key}"
-        title="${esc((k.title ? k.title + '. ' : '') + (ui.card===k.key ? 'Click again to show all' : 'Click to show only these'))}" aria-pressed="${ui.card===k.key}">
-        <div class="num">${L.filter(k.test).length}</div><div class="lbl">${k.label}</div></button>`).join('')}
-    </div>
-    ${ui.card ? `<div class="dv-cardfilter">Showing only <b>${CARDS.find(k=>k.key===ui.card).label}</b> <button class="linkish" data-act="card" data-k="${ui.card}">Show all</button></div>` : ''}`;
-  }
-
-
-  function emptyHTML(){
-    return `<div class="dv-empty">
-      <p><b>No colors in development yet.</b></p>
-      <p>Add one with <b>+ New color</b>, or load the starting data with <b>More → Import from file…</b></p>
-    </div>`;
-  }
-
-  function headerHTML(r){
-    let months = '', weeks = '';
-    for(let d = new Date(r.start); d < r.end; d = addD(d,7)){
-      weeks += `<div class="dv-week" style="left:${xOf(d,r)}px;width:${7*PX}px">${d.getMonth()+1}/${d.getDate()}</div>`;
-    }
-    let m = new Date(r.start.getFullYear(), r.start.getMonth(), 1);
-    while(m < r.end){
-      const next = new Date(m.getFullYear(), m.getMonth()+1, 1);
-      const a = m < r.start ? r.start : m, b = next > r.end ? r.end : next;
-      months += `<div class="dv-month" style="left:${xOf(a,r)}px;width:${xOf(b,r)-xOf(a,r)}px">${m.toLocaleDateString('en-US',{month:'short',year:'numeric'})}</div>`;
-      m = next;
-    }
-    return `<div class="dv-row dv-head"><div class="dv-left dv-head-left">Color</div>
-      <div class="dv-track dv-head-track" style="width:${r.width}px">${months}${weeks}</div></div>`;
-  }
-
-  function colorHTML(c, r, gname){
-    const open = expanded.has(c.id);
-    const st = stageDef(c.stage);
-    const cur = currentStep(c);
-    const meta = [c.material, c.bases.join(' + '), c.finish, c.partner].filter(Boolean).map(esc).join(' · ');
-    const trialN = c.trials.length;
-    const fk = `${gname}|${c.id}`;
-    let html = `
-    <div class="dv-row dv-color-row ${selected.has(c.id)?'is-selected':''}">
-      <div class="dv-left">
-        <input type="checkbox" class="dv-check" data-act="select" data-c="${c.id}" ${selected.has(c.id)?'checked':''} title="Select for bulk update">
-        <button class="dv-caret" data-act="toggle" data-c="${c.id}" aria-label="Show steps">${open?'▾':'▸'}</button>
-        <div class="dv-swatch" style="background:${esc(c.hex||'#ddd')}"></div>
-        <div class="dv-color-main" data-act="toggle" data-c="${c.id}">
-          <div class="dv-name">${esc(c.name||'Untitled')} <span class="dv-code">${esc(c.pantone||'')}</span></div>
-          <div class="dv-meta">${meta || '<span class="dv-muted">No base or partner set</span>'}</div>
-          <div class="dv-tags">${c.forTags.map(t=>`<span class="dv-tag">${esc(t)}</span>`).join('')}
-            ${trialN ? `<span class="dv-trialcount" title="Trial rounds">Trial ${trialN}</span>` : ''}</div>
-        </div>
-        <div class="dv-color-side">
-          <select class="dv-stage" data-c="${c.id}" data-f="stage" data-fk="${esc(fk)}|stage" style="background:${st.color};color:${contrast(st.color)}" title="Development stage">
-            ${STAGES.map(x=>`<option value="${x.key}" ${c.stage===x.key?'selected':''}>${esc(x.label)}</option>`).join('')}
-          </select>
-          <div class="dv-next">${cur ? `${cur.status==='Not started'?'Next':'Now'}: ${esc(cur.activity)}${cur.end?` · ${fmt(cur.end)}`:''}` : (rdSteps(c).length ? 'R&amp;D steps complete' : 'No R&amp;D steps yet')}</div>
-        </div>
-        <button class="icon-btn dv-edit" data-act="edit" data-c="${c.id}" title="Edit color details">✎</button>
-      </div>
-      <div class="dv-track" style="width:${r.width}px">
-        ${rdSteps(c).map(s=>bar(s.start, s.end, ownerColor(s.owner), 'dv-mini ' + (s.status==='Complete'?'done':''), `${s.activity} (${s.owner||'no owner'}) ${fmt(s.start)}–${fmt(s.end)}`, r)).join('')}
-      </div>
-    </div>`;
-    if(!open) return html;
-
-    // details: trial rounds + notes
-    html += `
-    <div class="dv-row dv-detail-row">
-      <div class="dv-left dv-detail">
-        <div class="dv-detail-head">Trial rounds</div>
-        ${c.trials.length ? c.trials.map(t=>`
-          <div class="dv-trial-line">
-            ${t.hex ? `<span class="dv-round-swatch" style="background:${esc(t.hex)}"></span>` : ''}<b>Trial ${esc(t.n)}</b>${c.finalTrial!=null && String(c.finalTrial)===String(t.n) ? ' <span class="dv-final-badge">Final shade</span>' : ''} · ${esc(t.partner||'')} · ${t.start||t.end ? `${esc(fmt(t.start)||'?')}–${esc(fmt(t.end)||'?')}` : 'no dates'}
-            · Testing: <span class="dv-result ${esc(t.result||'pending')}">${t.result==='pass'?'Passed':t.result==='fail'?'Failed':'Pending'}</span>
-            ${t.brandFeedback ? ` · Brand: <span class="dv-fb ${esc(t.brandFeedback)}">${esc(feedbackLabel(t.brandFeedback))}</span>${t.brandNote ? ` – “${esc(t.brandNote)}”` : ''}` : ''}
-            ${TEST_FIELDS.filter(f=>t[f.k]!=='' && t[f.k]!=null).map(f=>` · ${f.label} ${esc(t[f.k])}`).join('')}
-            ${t.notes ? `<div class="dv-muted">${esc(t.notes)}</div>` : ''}
-          </div>`).join('') : `<div class="dv-muted">No trial rounds yet.</div>`}
-        <div class="dv-detail-links">
-          <button class="linkish" data-act="edit" data-c="${c.id}" data-tab="trials">Add or edit trial rounds</button>
-          ${c.photosUrl ? ` · <a href="${esc(c.photosUrl)}" target="_blank" rel="noopener">Photos</a>` : ''}
-        </div>
-        ${c.notes ? `<div class="dv-color-notes">${esc(c.notes)}</div>` : ''}
-        ${(()=>{ const n = c.steps.length - rdSteps(c).length;
-          return n ? `<div class="dv-muted dv-prod-note">${n} brand / production step${n===1?'':'s'} (approval, PO, production run) saved for the future Production tab.</div>` : ''; })()}
-      </div>
-      <div class="dv-track" style="width:${r.width}px">
-        ${c.trials.map(t=>bar(t.start, t.end || t.start, 'transparent', 'dv-trialbar ' + (t.result||''), `Trial ${t.n}`, r)).join('')}
-      </div>
-    </div>`;
-
-    const visibleSteps = rdSteps(c);
-    visibleSteps.forEach((s, i)=>{
-      const k = `${fk}|${s.id}`;
-      html += `
-      <div class="dv-row dv-step-row">
-        <div class="dv-left dv-step">
-          <div class="dv-step-line">
-            <span class="dv-owner-dot" style="background:${ownerColor(s.owner)}"></span>
-            <select class="dv-status st-${esc((s.status||'').replace(/\s+/g,'-').toLowerCase())}" data-c="${c.id}" data-s="${s.id}" data-f="status" data-fk="${esc(k)}|status">
-              ${STEP_STATUSES.map(x=>`<option ${s.status===x?'selected':''}>${x}</option>`).join('')}
-            </select>
-            <input class="dv-activity" value="${esc(s.activity)}" data-c="${c.id}" data-s="${s.id}" data-f="activity" data-fk="${esc(k)}|activity" placeholder="Step">
-            <span class="dv-step-btns">
-              <button class="icon-btn" data-act="up" data-c="${c.id}" data-s="${s.id}" title="Move up" ${i===0?'disabled':''}>↑</button>
-              <button class="icon-btn" data-act="down" data-c="${c.id}" data-s="${s.id}" title="Move down" ${i===visibleSteps.length-1?'disabled':''}>↓</button>
-              <button class="icon-btn" data-act="delStep" data-c="${c.id}" data-s="${s.id}" title="Delete step">✕</button>
-            </span>
-          </div>
-          <div class="dv-step-line dv-step-fields">
-            <label>Owner <input list="dvOwnerList" value="${esc(s.owner)}" data-c="${c.id}" data-s="${s.id}" data-f="owner" data-fk="${esc(k)}|owner"></label>
-            <label>Start <input type="date" value="${esc(s.start)}" data-c="${c.id}" data-s="${s.id}" data-f="start" data-fk="${esc(k)}|start"></label>
-            <label>End <input type="date" value="${esc(s.end)}" data-c="${c.id}" data-s="${s.id}" data-f="end" data-fk="${esc(k)}|end"></label>
-            <span class="dv-days">${days(s) ? days(s)+' d' : ''}</span>
-          </div>
-          <textarea class="dv-notes" rows="1" placeholder="Notes" data-c="${c.id}" data-s="${s.id}" data-f="notes" data-fk="${esc(k)}|notes">${esc(s.notes)}</textarea>
-        </div>
-        <div class="dv-track" style="width:${r.width}px">
-          ${bar(s.start, s.end, ownerColor(s.owner), s.status==='Complete'?'done':(s.status==='At risk'?'risk':''), `${s.activity} ${fmt(s.start)}–${fmt(s.end)}`, r)}
-        </div>
-      </div>`;
-    });
-    html += `
-      <div class="dv-row dv-add-row"><div class="dv-left">
-        <button class="linkish" data-act="addStep" data-c="${c.id}">+ Add step</button>
-        ${visibleSteps.length === 0 ? ` · <button class="linkish" data-act="addTemplate" data-c="${c.id}">Add the standard R&amp;D steps</button>` : ''}
-      </div><div class="dv-track" style="width:${r.width}px"></div></div>`;
-    return html;
-  }
-
+  // Bulk updates for the ticked colors.
   function bulkHTML(){
     if(!selected.size) return '';
     const sel = [...selected].map(byId).filter(Boolean);
-    const names = [];
-    sel.forEach(c=>rdSteps(c).forEach(s=>{ const n=(s.activity||'').trim(); if(n && !names.includes(n)) names.push(n); }));
     return `<div class="dv-bulk">
-      <b>${sel.length} selected</b>
-      <span class="dv-bulk-group">Update step
-        <select id="dvBulkStep"><option value="">Choose a step…</option>${names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('')}</select>
-        <select id="dvBulkStatus"><option value="">Status (no change)</option>${STEP_STATUSES.map(x=>`<option>${x}</option>`).join('')}</select>
-        <input type="date" id="dvBulkStart" title="Start">
-        <input type="date" id="dvBulkEnd" title="End">
-        <input id="dvBulkNote" placeholder="Note (replaces)">
-        <button class="btn" data-act="bulkStep">Apply</button>
-      </span>
-      <span class="dv-bulk-group">Stage
-        <select id="dvBulkStage"><option value="">Choose…</option>${STAGES.map(s=>`<option value="${s.key}">${esc(s.label)}</option>`).join('')}</select>
-        <button class="btn" data-act="bulkStage">Set</button>
-      </span>
-      <button class="btn secondary" data-act="clearSel">Clear selection</button>
+      <div class="dv-bulk-line">
+        <b>${sel.length} selected</b>
+        <span class="dv-bulk-group">Set
+          <select id="dvBulkStage" title="Stage"><option value="">Stage…</option>${STAGES.map(s=>`<option value="${s.key}">${esc(s.label)}</option>`).join('')}</select>
+          <input id="dvBulkPartner" list="dvPartnerListBulk" placeholder="Partner…" title="Partner"><datalist id="dvPartnerListBulk">${allPartners().map(p=>`<option value="${esc(p)}">`).join('')}</datalist>
+          <select id="dvBulkTexture" title="Texture"><option value="">Texture…</option>${DEV_TEXTURES.map(t=>`<option>${t}</option>`).join('')}</select>
+          <select id="dvBulkQuarter" title="Forecast quarter"><option value="">Forecast quarter…</option>${quarterOptions().map(q=>`<option>${q}</option>`).join('')}</select>
+          <button class="btn" data-act="bulkSet">Apply</button>
+        </span>
+        <button class="btn secondary" data-act="bulkPrio">Send to Priorities</button>
+        <button class="btn secondary" data-act="clearSel">Clear selection</button>
+      </div>
+      <div class="dv-bulk-line">
+        <span class="dv-bulk-group">Add a step to each
+          <select id="dvBulkAddType">${STEP_TYPES.map(t=>`<option value="${t.key}">${t.label}</option>`).join('')}</select>
+          <select id="dvBulkAddStatus">${STEP_STATUSES.map(s=>`<option>${s}</option>`).join('')}</select>
+          <input type="date" id="dvBulkAddStart" title="Start"><input type="date" id="dvBulkAddEnd" title="End">
+          <button class="btn" data-act="bulkAdd">Add</button>
+        </span>
+        <span class="dv-bulk-group">Update each one's latest
+          <select id="dvBulkUpdType">${STEP_TYPES.map(t=>`<option value="${t.key}">${t.label}</option>`).join('')}</select>
+          <select id="dvBulkUpdStatus"><option value="">Status…</option>${STEP_STATUSES.map(s=>`<option>${s}</option>`).join('')}</select>
+          <select id="dvBulkUpdResult"><option value="">Result…</option>${RESULTS.filter(r=>r.key).map(r=>`<option value="${r.key}">${r.label}</option>`).join('')}<option value="pending">Pending</option></select>
+          <input type="date" id="dvBulkUpdEnd" title="End date">
+          <button class="btn" data-act="bulkUpd">Update</button>
+        </span>
+      </div>
     </div>`;
   }
-
-  function autoGrow(t){ t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px'; }
 
   // ---------- events ----------
   function onChange(e){
@@ -665,33 +527,35 @@
     if(act === 'groupBy'){ ui.groupBy = el.value; writePrefs(); return render(); }
     if(act === 'stageFilter'){ ui.stage = el.value; ui.card = ''; return render(); }
     if(act === 'showDone'){ ui.showDone = el.checked; return render(); }
-    if(act === 'select'){
-      el.checked ? selected.add(el.dataset.c) : selected.delete(el.dataset.c);
-      return render();
+    if(act === 'select'){ el.checked ? selected.add(el.dataset.c) : selected.delete(el.dataset.c); return render(); }
+    if(act === 'selectAll'){ visibleIds().forEach(id=> el.checked ? selected.add(id) : selected.delete(id)); return render(); }
+    if(act === 'prio'){
+      const c = byId(el.dataset.c);
+      if(c && window.prioData) window.prioData.toggle(c.id, el.checked).then(()=>{ render(); toast(el.checked ? `${c.name} added to Finishing Priorities.` : `${c.name} removed from Finishing Priorities.`); });
+      return;
     }
     const c = byId(el.dataset.c); const f = el.dataset.f;
     if(!c || !f) return;
     if(f === 'texture' || f === 'forecastSqft' || f === 'forecastQuarter'){
       c[f] = f === 'forecastSqft' ? (el.value === '' ? '' : String(Math.max(0, Math.round(Number(el.value)) || 0))) : el.value;
-      saveQuietly(c);
+      saveQuietly(c); repaintOthers();
       return setTimeout(render, 0);
     }
     if(f === 'stage'){
-      c.stage = el.value; saveQuietly(c);
+      c.stage = el.value; saveQuietly(c); repaintOthers();
       if(c.stage === 'final' && !ui.showDone) toast(`${c.name} is approved – final. It moves to Stock Offerings and is hidden here.`);
       else if(c.stage === 'failed_stopped' && !ui.showDone) toast(`${c.name} marked “no more trials” and hidden here.`);
       return setTimeout(render, 0);
     }
-    const s = c.steps.find(x=>x.id===el.dataset.s);
-    if(!s) return;
-    s[f] = el.value;
-    saveQuietly(c);
-    setTimeout(render, 0);   // let focus move first, then restore it
+  }
+  function repaintOthers(){
+    if(typeof window.renderPrio === 'function') window.renderPrio();
+    if(typeof window.renderStock === 'function') window.renderStock();
   }
 
   async function onClick(e){
     const btn = e.target.closest('[data-act]');
-    const root = activeRoot = e.currentTarget;
+    const root = e.currentTarget;
     const menu = root.querySelector('.dv-menu-list');
     if(menu && !e.target.closest('.dv-menu')) menu.hidden = true;
     if(!btn || btn.tagName === 'SELECT' || btn.tagName === 'INPUT') return;
@@ -699,31 +563,9 @@
     const c = btn.dataset.c ? byId(btn.dataset.c) : null;
     switch(act){
       case 'menu': menu.hidden = !menu.hidden; return;
-      case 'toggle': expanded.has(c.id) ? expanded.delete(c.id) : expanded.add(c.id); return render();
-      case 'expandAll':
-        if(expanded.size) expanded.clear(); else live().forEach(x=>expanded.add(x.id));
-        return render();
-      case 'edit': return openModal(c, false, btn.dataset.tab);
+      case 'edit': return openModal(c, false);
+      case 'steps': return openSteps(c);
       case 'new': return openModal(null, true);
-      case 'addStep':
-        c.steps.push({id:uid(), phase:'rd', activity:'', owner:'', start:'', end:'', status:'Not started', notes:''});
-        await save(c); return render();
-      case 'addTemplate':
-        c.steps = [...templateSteps(c.partner || 'Pearl', c.forTags[0] || '', ''), ...c.steps];
-        await save(c); return render();
-      case 'delStep': {
-        const s = c.steps.find(x=>x.id===btn.dataset.s);
-        if(!confirm(`Delete the step “${s.activity || 'Untitled'}” from ${c.name}?`)) return;
-        c.steps = c.steps.filter(x=>x!==s); await save(c); return render();
-      }
-      case 'up': case 'down': {
-        const vis = rdSteps(c);
-        const vi = vis.findIndex(x=>x.id===btn.dataset.s), vj = act==='up' ? vi-1 : vi+1;
-        if(vj<0 || vj>=vis.length) return;
-        const i = c.steps.indexOf(vis[vi]), j = c.steps.indexOf(vis[vj]);
-        [c.steps[i], c.steps[j]] = [c.steps[j], c.steps[i]];
-        await save(c); return render();
-      }
       case 'clearSel': selected.clear(); return render();
       case 'card': ui.card = ui.card === btn.dataset.k ? '' : btn.dataset.k; if(ui.card) ui.stage = 'all'; return render();
       case 'sort':
@@ -731,8 +573,10 @@
         else if(ui.sortDir === 1) ui.sortDir = -1;
         else ui.sortKey = '';                       // third click: back to the normal order
         return render();
-      case 'bulkStep': return bulkStep();
-      case 'bulkStage': return bulkStage();
+      case 'bulkSet': return bulkSet(root);
+      case 'bulkAdd': return bulkAdd(root);
+      case 'bulkUpd': return bulkUpd(root);
+      case 'bulkPrio': return bulkPrio();
       case 'exportJson': menu.hidden = true; return exportJson();
       case 'exportCsv': menu.hidden = true; return exportCsv();
       case 'import': menu.hidden = true; return pickImport();
@@ -740,42 +584,56 @@
       case 'trash': menu.hidden = true; return openTrash();
     }
   }
-
   function onInput(e){
-    const el = e.target;
-    if(el.dataset.act === 'search'){
-      ui.q = el.value;
-      clearTimeout(onInput.t); onInput.t = setTimeout(render, 200);
-    }
-    if(el.classList.contains('dv-notes')) autoGrow(el);
+    if(e.target.dataset.act === 'search'){ ui.q = e.target.value; clearTimeout(onInput.t); onInput.t = setTimeout(render, 200); }
   }
 
-  async function bulkStep(){
-    const name = activeRoot.querySelector('#dvBulkStep').value;
-    if(!name) return alert('Choose which step to update.');
-    const vals = {
-      status: activeRoot.querySelector('#dvBulkStatus').value,
-      start: activeRoot.querySelector('#dvBulkStart').value,
-      end: activeRoot.querySelector('#dvBulkEnd').value,
-      notes: activeRoot.querySelector('#dvBulkNote').value,
-    };
-    if(!Object.values(vals).some(Boolean)) return alert('Set a status, date or note to apply.');
-    let n = 0;
-    for(const id of selected){
-      const c = byId(id); if(!c) continue;
-      const s = rdSteps(c).find(x=>(x.activity||'').trim() === name);
-      if(!s) continue;
-      Object.entries(vals).forEach(([k,v])=>{ if(v) s[k] = v; });
+  const selectedColors = () => [...selected].map(byId).filter(Boolean);
+  async function bulkSet(root){
+    const v = id => root.querySelector('#' + id).value.trim();
+    const vals = {stage:v('dvBulkStage'), partner:v('dvBulkPartner'), texture:v('dvBulkTexture'), forecastQuarter:v('dvBulkQuarter')};
+    if(!Object.values(vals).some(Boolean)) return alert('Choose a stage, partner, texture or forecast quarter to apply.');
+    const list = selectedColors();
+    for(const c of list){ Object.entries(vals).forEach(([k,x])=>{ if(x) c[k] = x; }); await save(c); }
+    render(); repaintOthers(); toast(`Updated ${list.length} color${list.length===1?'':'s'}.`);
+  }
+  async function bulkAdd(root){
+    const v = id => root.querySelector('#' + id).value;
+    const type = v('dvBulkAddType'), list = selectedColors();
+    for(const c of list){
+      const round = type === 'trial' ? (trialCount(c) ? maxRound(c) + 1 : Math.max(1, maxRound(c))) : Math.max(1, maxRound(c));
+      addStepTo(c, blankStep(type, {round, owner:ownerFor(type, c), status:v('dvBulkAddStatus'), start:v('dvBulkAddStart'), end:v('dvBulkAddEnd')}));
+      await save(c);
+    }
+    render(); toast(`Added “${typeDef(type).label}” to ${list.length} color${list.length===1?'':'s'}.`);
+  }
+  async function bulkUpd(root){
+    const v = id => root.querySelector('#' + id).value;
+    const type = v('dvBulkUpdType'), status = v('dvBulkUpdStatus'), result = v('dvBulkUpdResult'), end = v('dvBulkUpdEnd');
+    if(!status && !result && !end) return alert('Choose a status, result or end date to apply.');
+    let n = 0, missing = 0;
+    for(const c of selectedColors()){
+      const s = rdSteps(c).filter(x=>x.type===type).pop();
+      if(!s){ missing++; continue; }
+      if(status) s.status = status;
+      if(result && typeDef(type).result) s.result = result === 'pending' ? '' : result;
+      if(end) s.end = end;
       await save(c); n++;
     }
     render();
-    toast(`Updated “${name}” on ${n} color${n===1?'':'s'}.`);
+    toast(`Updated the latest “${typeDef(type).label}” on ${n} color${n===1?'':'s'}.` + (missing ? ` ${missing} had no such step.` : ''));
   }
-  async function bulkStage(){
-    const st = activeRoot.querySelector('#dvBulkStage').value;
-    if(!st) return alert('Choose a stage.');
-    for(const id of selected){ const c = byId(id); if(c){ c.stage = st; await save(c); } }
-    render();
+  async function bulkPrio(){
+    if(!window.prioData) return;
+    const list = selectedColors();
+    for(const c of list) await window.prioData.toggle(c.id, true);
+    render(); toast(`${list.length} color${list.length===1?'':'s'} on Finishing Priorities.`);
+  }
+  // A new step goes after the last step of an earlier or equal round (production steps stay last).
+  function addStepTo(c, s){
+    const rd = rdSteps(c), prod = c.steps.filter(x=>phaseOf(x)==='production');
+    rd.push(s);
+    c.steps = [...rd, ...prod];
   }
 
   function toast(text){
@@ -785,17 +643,151 @@
     clearTimeout(toast.t); toast.t = setTimeout(()=>{ el.style.display = 'none'; }, 3500);
   }
 
-  // ---------- standard steps ----------
-  function templateSteps(partner, brand, startDate){
+  // ---------- Progress pop-up: every step for one color ----------
+  function ensureSteps(){
+    if(document.getElementById('dvSteps')) return;
+    const el = document.createElement('div');
+    el.className = 'modal-overlay'; el.id = 'dvSteps';
+    el.innerHTML = `<div class="modal st-modal"><div id="dvStepsHead"></div><div id="dvStepsBody"></div>
+      <div class="modal-actions"><button class="btn secondary" id="dvStepsCancel">Cancel</button><button class="btn" id="dvStepsSave">Save</button></div></div>`;
+    document.body.appendChild(el);
+    el.querySelector('#dvStepsCancel').addEventListener('click', ()=>{ el.classList.remove('open'); stepEdit = null; });
+    el.querySelector('#dvStepsSave').addEventListener('click', saveSteps);
+    el.addEventListener('click', e=>{
+      if(e.target === el){ el.classList.remove('open'); stepEdit = null; return; }
+      const b = e.target.closest('[data-st]'); if(!b) return;
+      readSteps();
+      const rd = rdSteps(stepEdit), i = rd.findIndex(s=>s.id===b.dataset.id);
+      if(b.dataset.st === 'add'){
+        const type = b.dataset.type || el.querySelector('#dvStepAddType').value;
+        const round = type === 'trial' ? (trialCount(stepEdit) ? maxRound(stepEdit) + 1 : Math.max(1, maxRound(stepEdit))) : Math.max(1, maxRound(stepEdit));
+        const last = rd[rd.length-1];
+        const start = last && last.end ? iso(addD(pd(last.end), 1)) : '';
+        addStepTo(stepEdit, blankStep(type, {round, owner:ownerFor(type, stepEdit), start}));
+      }
+      if(b.dataset.st === 'del' && confirm('Delete this step?')) setRd(rd.filter(s=>s.id!==b.dataset.id));
+      if(b.dataset.st === 'up' && i > 0){ [rd[i-1], rd[i]] = [rd[i], rd[i-1]]; setRd(rd); }
+      if(b.dataset.st === 'down' && i < rd.length-1){ [rd[i+1], rd[i]] = [rd[i], rd[i+1]]; setRd(rd); }
+      if(b.dataset.st === 'more'){ const r = el.querySelector(`.st-row[data-id="${b.dataset.id}"]`); r.classList.toggle('more'); return; }
+      fillSteps();
+    });
+  }
+  function setRd(rd){ stepEdit.steps = [...rd, ...stepEdit.steps.filter(x=>phaseOf(x)==='production')]; }
+  function openSteps(c){
+    ensureSteps();
+    stepEdit = JSON.parse(JSON.stringify(c));
+    fillSteps();
+    document.getElementById('dvSteps').classList.add('open');
+  }
+  function fillSteps(){
+    const c = stepEdit, rd = rdSteps(c), prod = c.steps.length - rd.length;
+    const owners = allOwners();
+    document.getElementById('dvStepsHead').innerHTML = `<div class="st-head">
+      <span class="dt-swatch" style="background:${esc(c.hex||'#ddd')}"></span>
+      <div><h2>${esc(c.name)} <span class="dv-muted">progress</span></h2>
+      <div class="dv-muted">${esc([c.partner, c.forTags.join(', '), c.bases.join(' + '), c.texture].filter(Boolean).join(' · '))}</div></div></div>`;
+    document.getElementById('dvStepsBody').innerHTML = `
+      <datalist id="dvOwnerListSt">${owners.map(o=>`<option value="${esc(o)}">`).join('')}</datalist>
+      <div class="st-list">${rd.length ? rd.map((s,i)=>{
+        const t = typeDef(s.type);
+        const hasExtra = t.result || t.feedback;
+        const filled = TEST_FIELDS.some(f=>s[f.k]);
+        return `<div class="st-row ${filled ? 'more' : ''} st-${esc(s.type)}" data-id="${s.id}">
+          <div class="st-line">
+            <span class="st-round" title="Round"><input data-k="round" type="number" min="1" value="${esc(s.round||1)}" aria-label="Round"></span>
+            <select data-k="type" title="Step type">${STEP_TYPES.map(x=>`<option value="${x.key}" ${s.type===x.key?'selected':''}>${x.label}</option>`).join('')}</select>
+            <input data-k="activity" class="st-label" value="${esc(s.activity)}" placeholder="Description">
+            <input data-k="owner" list="dvOwnerListSt" value="${esc(s.owner)}" placeholder="Who" class="st-owner">
+            <input data-k="start" type="date" value="${esc(s.start)}" title="Start">
+            <input data-k="end" type="date" value="${esc(s.end)}" title="End">
+            <select data-k="status" class="st-status st-${esc((s.status||'').replace(/\s+/g,'-').toLowerCase())}">${STEP_STATUSES.map(x=>`<option ${s.status===x?'selected':''}>${x}</option>`).join('')}</select>
+            <span class="st-btns">
+              <button class="icon-btn" data-st="up" data-id="${s.id}" title="Move up" ${i===0?'disabled':''}>↑</button>
+              <button class="icon-btn" data-st="down" data-id="${s.id}" title="Move down" ${i===rd.length-1?'disabled':''}>↓</button>
+              <button class="icon-btn" data-st="del" data-id="${s.id}" title="Delete step">✕</button></span>
+          </div>
+          <div class="st-line st-sub">
+            ${t.result ? `<label>Result <select data-k="result" class="st-res ${esc(s.result||'pending')}">${RESULTS.map(r=>`<option value="${r.key}" ${(s.result||'')===r.key?'selected':''}>${r.label}</option>`).join('')}</select></label>` : ''}
+            ${t.shade ? `<label title="Swatch color of this round">Shade <input data-k="hex" type="color" value="${isHex(s.hex) ? esc(s.hex) : (isHex(c.hex) ? esc(c.hex) : '#B9A58C')}"></label>` : ''}
+            ${t.feedback ? `<label>Brand <select data-k="brandFeedback" class="st-fb ${esc(s.brandFeedback||'')}">${BRAND_FEEDBACK.map(f=>`<option value="${f.key}" ${(s.brandFeedback||'')===f.key?'selected':''}>${f.label}</option>`).join('')}</select></label>
+              <input data-k="brandNote" value="${esc(s.brandNote)}" placeholder="Brand comment, e.g. needs to be darker" class="st-note">` : ''}
+            <input data-k="notes" value="${esc(s.notes)}" placeholder="Notes" class="st-note">
+            ${t.result ? `<button class="linkish" data-st="more" data-id="${s.id}">Test data${filled ? ' ✓' : ''}</button>` : ''}
+          </div>
+          ${t.result ? `<div class="st-line st-tests">${TEST_FIELDS.map(f=>`<label>${f.label}<input data-k="${f.k}" value="${esc(s[f.k])}"></label>`).join('')}</div>` : ''}
+          ${!hasExtra ? '' : ''}
+        </div>`; }).join('') : `<p class="dv-muted">No steps yet. Add the first one below.</p>`}</div>
+      <div class="st-add">
+        <span class="dv-muted">Add a step:</span>
+        ${['color_match','trial','ship_in','testing','ship_brand','brand'].map(k=>`<button class="btn secondary" data-st="add" data-type="${k}">+ ${typeDef(k).label}</button>`).join('')}
+        <span class="st-add-other"><select id="dvStepAddType">${STEP_TYPES.map(x=>`<option value="${x.key}">${x.label}</option>`).join('')}</select><button class="btn secondary" data-st="add">+ Add</button></span>
+      </div>
+      <p class="dv-hint">A <b>Trial round</b> is one shade attempt and starts a new round. Setting a <b>Brand review</b> to <b>Approved</b> makes the latest trial the final shade and moves the color to Stock Offerings. <b>Changes requested</b> sends it back to coating trial and adds the next trial round.</p>
+      ${prod ? `<p class="dv-muted dv-prod-note">${prod} brand / production step${prod===1?'':'s'} (purchase order, production run) saved for a future Production tab.</p>` : ''}`;
+  }
+  function readSteps(){
+    if(!stepEdit) return;
+    document.querySelectorAll('#dvSteps .st-row').forEach(row=>{
+      const s = stepEdit.steps.find(x=>x.id===row.dataset.id); if(!s) return;
+      row.querySelectorAll('[data-k]').forEach(inp=>{
+        let v = inp.value;
+        if(inp.dataset.k === 'round') v = Math.max(1, parseInt(v, 10) || 1);
+        else v = String(v).trim();
+        if(inp.dataset.k === 'type' && v !== s.type && (!s.activity || s.activity === typeDef(s.type).label)) s.activity = typeDef(v).label;
+        s[inp.dataset.k] = v;
+      });
+    });
+  }
+  async function saveSteps(){
+    readSteps();
+    const c = stepEdit, before = byId(c.id);
+    const prevFb = id => { const s = before && before.steps.find(x=>x.id===id); return s ? (s.brandFeedback||'') : ''; };
+    const brands = rdSteps(c).filter(s=>s.type==='brand');
+    const changed = brands.filter(s=>(s.brandFeedback||'') !== prevFb(s.id));
+    const latestBrand = brands[brands.length-1];
+    const trials = rdSteps(c).filter(s=>s.type==='trial');
+    let note = '';
+    // Brand feedback closes that review (or reopens it while it's with the brand).
+    changed.forEach(s=>{ s.status = s.brandFeedback==='with_brand' ? 'In progress' : (s.brandFeedback ? 'Complete' : s.status); });
+    const approved = changed.find(s=>s.brandFeedback==='approved');
+    if(approved){
+      const shade = trials.filter(t=>(Number(t.round)||0) <= (Number(approved.round)||99)).pop() || trials[trials.length-1];
+      c.stage = 'final';
+      if(shade){ c.finalStepId = shade.id; if(isHex(shade.hex)) c.hex = shade.hex; }
+      note = `${c.name} approved: now Approved – final, and it moves to Stock Offerings.`;
+    } else if(latestBrand && changed.includes(latestBrand) && latestBrand.brandFeedback === 'changes'){
+      c.stage = 'coating_trial';
+      const round = maxRound(c) + 1;
+      addStepTo(c, blankStep('trial', {round, owner:c.partner||'', notes: latestBrand.brandNote ? `Brand asked: ${latestBrand.brandNote}` : 'Brand requested changes'}));
+      note = `Brand requested changes: ${c.name} is back in coating trial, and trial round ${round} was added.`;
+    } else if(latestBrand && changed.includes(latestBrand) && latestBrand.brandFeedback === 'with_brand'){
+      c.stage = 'brand_review';
+      note = `${c.name} is now with the brand for approval.`;
+    }
+    if(c.stage !== 'final') delete c.finalStepId;
+    const btn = document.getElementById('dvStepsSave'); btn.disabled = true;
+    try {
+      await save(c);
+      const i = colors.findIndex(x=>x.id===c.id); if(i >= 0) colors[i] = c;
+      document.getElementById('dvSteps').classList.remove('open'); stepEdit = null;
+      render(); repaintOthers();
+      if(note) toast(note);
+    } catch(e){ /* the storage layer shows a banner */ }
+    finally { btn.disabled = false; }
+  }
+
+  // ---------- standard steps for a new color ----------
+  function templateSteps(c, startDate){
     let d = pd(startDate);
     return TEMPLATE.map(t=>{
-      const s = {id:uid(), phase:'rd', activity:t.a(partner, brand), owner:t.o(partner, brand), start:'', end:'', status:'Not started', notes:''};
+      const s = blankStep(t.type, {round:1, owner:ownerFor(t.type, c)});
+      if(t.type === 'color_match' && c.partner) s.activity = `${c.partner}: color matching`;
       if(d){ s.start = iso(d); const e = addD(d, t.days-1); s.end = iso(e); d = addD(e, 1); }
       return s;
     });
   }
 
-  // ---------- color modal ----------
+  // ---------- color details pop-up ----------
   function ensureModal(){
     if(document.getElementById('dvModal')) return;
     const el = document.createElement('div');
@@ -810,62 +802,44 @@
     el.querySelector('#dvCancel').addEventListener('click', closeModal);
     el.querySelector('#dvSave').addEventListener('click', saveModal);
     el.querySelector('#dvDelete').addEventListener('click', deleteFromModal);
-    el.addEventListener('click', e=>{
-      if(e.target === el) closeModal();
-      const b = e.target.closest('[data-tact]'); if(!b) return;
-      readModal();
-      if(b.dataset.tact === 'addTrial'){
-        const last = editing.trials[editing.trials.length-1];
-        editing.trials.push({n:(last ? Number(last.n)||editing.trials.length : 0)+1, partner:editing.partner||'', start:'', end:'', result:'',
-          hex: last && last.hex ? last.hex : editing.hex, brandFeedback:'', brandNote:'',
-          ballyFlex:'', martindale:'', coatWeight:'', deltaE:'', L:'', a:'', b:'', notes:''});
-      }
-      if(b.dataset.tact === 'delTrial'){ editing.trials.splice(Number(b.dataset.i), 1); }
-      fillModal();
-    });
+    el.addEventListener('click', e=>{ if(e.target === el) closeModal(); });
     el.addEventListener('input', e=>{
       if(e.target.id === 'dvHexPick') el.querySelector('#dvHex').value = e.target.value;
-      if(e.target.id === 'dvHex' && /^#[0-9a-f]{6}$/i.test(e.target.value)) el.querySelector('#dvHexPick').value = e.target.value;
+      if(e.target.id === 'dvHex' && isHex(e.target.value)) el.querySelector('#dvHexPick').value = e.target.value;
     });
   }
-
-  function openModal(c, isNew, focusTab){
+  function openModal(c, isNew){
     ensureModal();
     editingIsNew = isNew;
     editing = isNew
-      ? {id:uid(), name:'', pantone:'', hex:'#B9A58C', forTags:[], material:'', bases:[], baseForm:'', finish:'', texture:'',
+      ? {id:uid(), v:2, name:'', pantone:'', hex:'#B9A58C', forTags:[], material:'', bases:[], baseForm:'', finish:'', texture:'',
          partner:'Pearl', stage:'to_be_trialed', availability:'', photosUrl:'', notes:'', trials:[], steps:[],
-         order: Math.max(0, ...colors.map(x=>x.order||0)) + 1}
+         forecastSqft:'', forecastQuarter:'', order: Math.max(0, ...colors.map(x=>x.order||0)) + 1}
       : JSON.parse(JSON.stringify(c));
     document.getElementById('dvModalTitle').textContent = isNew ? 'New color in development' : 'Edit ' + (c.name || 'color');
     document.getElementById('dvDelete').style.display = isNew ? 'none' : '';
     fillModal();
     document.getElementById('dvModal').classList.add('open');
-    if(focusTab === 'trials') document.getElementById('dvTrials').scrollIntoView({block:'start'});
-    else document.getElementById('dvName').focus();
+    document.getElementById('dvName').focus();
   }
   function closeModal(){ document.getElementById('dvModal').classList.remove('open'); editing = null; }
-
   function opt(list, val, blank){
     return (blank !== undefined ? `<option value="">${blank}</option>` : '') +
       list.map(x=>`<option ${x===val?'selected':''}>${esc(x)}</option>`).join('') +
       (val && !list.includes(val) ? `<option selected>${esc(val)}</option>` : '');
   }
-
   function fillModal(){
     const c = editing;
     const baseNames = [...new Set([...activeBases(), ...c.bases])];
-    const textureNames = (typeof textures !== 'undefined' && Array.isArray(textures)) ? textures.map(t=>t.name) : [];
     document.getElementById('dvModalBody').innerHTML = `
       <datalist id="dvForList">${allForTags().map(t=>`<option value="${esc(t)}">`).join('')}</datalist>
       <datalist id="dvPartnerList">${allPartners().map(t=>`<option value="${esc(t)}">`).join('')}</datalist>
-      <datalist id="dvTextureList">${textureNames.map(t=>`<option value="${esc(t)}">`).join('')}</datalist>
       <div class="form-grid">
         <div class="form-field"><label>Color name</label><input id="dvName" value="${esc(c.name)}" placeholder="e.g. SM Custom Grey"></div>
         <div class="form-field"><label>Pantone code</label><input id="dvPantone" value="${esc(c.pantone)}" placeholder="e.g. 19-1220 TCX"></div>
         <div class="form-field"><label>Swatch color</label><div class="hex-row">
-          <input type="color" id="dvHexPick" value="${/^#[0-9a-f]{6}$/i.test(c.hex)?esc(c.hex):'#B9A58C'}"><input id="dvHex" value="${esc(c.hex)}"></div></div>
-        <div class="form-field"><label>For (brand or collection)</label>
+          <input type="color" id="dvHexPick" value="${isHex(c.hex)?esc(c.hex):'#B9A58C'}"><input id="dvHex" value="${esc(c.hex)}"></div></div>
+        <div class="form-field"><label>Project (brand or collection)</label>
           <input id="dvFor" list="dvForList" value="${esc(c.forTags.join(', '))}" placeholder="e.g. Reformation, Spring '27">
           <span class="dv-hint">Separate several with commas</span></div>
         <div class="form-field"><label>Material</label><select id="dvMaterial">${opt(MATERIALS, c.material, 'Not set')}</select></div>
@@ -874,7 +848,7 @@
           ${baseNames.map(b=>`<label><input type="checkbox" class="dvBase" value="${esc(b)}" ${c.bases.includes(b)?'checked':''}> ${esc(b)}</label>`).join('')}
         </div></div>
         <div class="form-field"><label>Base used</label><select id="dvBaseForm">${opt(BASE_FORMS, c.baseForm, 'Not set')}</select></div>
-        <div class="form-field"><label>Texture tested on</label><select id="dvTexture"><option value="">Not set</option>${[...new Set([...DEV_TEXTURES, ...(c.texture ? [c.texture] : [])])].map(x=>`<option ${c.texture===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
+        <div class="form-field"><label>Texture tested on</label><select id="dvTexture">${opt(DEV_TEXTURES, c.texture, 'Not set')}</select></div>
         <div class="form-field"><label>Partner (trial location)</label><input id="dvPartner" list="dvPartnerList" value="${esc(c.partner)}"></div>
         <div class="form-field"><label>Development stage</label><select id="dvStage">${STAGES.map(s=>`<option value="${s.key}" ${c.stage===s.key?'selected':''}>${esc(s.label)}</option>`).join('')}</select></div>
         <div class="form-field"><label>Forecasted order (sq ft)</label><input id="dvFcSqft" type="number" min="0" step="10" value="${esc(c.forecastSqft||'')}"></div>
@@ -884,33 +858,12 @@
         <div class="form-field full"><label>Notes</label><textarea id="dvNotes" rows="2">${esc(c.notes)}</textarea></div>
         ${editingIsNew ? `
         <div class="form-field full dv-newsteps">
-          <label><input type="checkbox" id="dvAddSteps" checked> Add the standard R&amp;D steps (send Pantone, lab color match, ship samples, Uncaged testing)</label>
+          <label><input type="checkbox" id="dvAddSteps" checked> Add the first steps (send Pantone, color matching, ship samples to Uncaged, Uncaged testing)</label>
           <span>First step starts <input type="date" id="dvStepStart"> <span class="dv-hint">optional: fills in suggested dates from typical durations</span></span>
         </div>` : ''}
       </div>
-      <div class="dv-trials" id="dvTrials">
-        <h3>Trial rounds</h3>
-        ${c.trials.length ? `<div class="dv-trial-table">
-          <div class="dv-trial-headrow"><span>#</span><span>Shade</span><span>Partner</span><span>Start</span><span>End</span><span>Testing</span><span>Brand feedback</span><span>Brand comment</span>${TEST_FIELDS.map(f=>`<span>${f.label}</span>`).join('')}<span>Notes</span><span></span></div>
-          ${c.trials.map((t,i)=>`<div class="dv-trial-edit" data-i="${i}">
-            <input data-t="n" value="${esc(t.n)}">
-            <input data-t="hex" type="color" value="${/^#[0-9a-f]{6}$/i.test(t.hex||'') ? esc(t.hex) : (/^#[0-9a-f]{6}$/i.test(c.hex)?esc(c.hex):'#B9A58C')}" title="Swatch for this round">
-            <input data-t="partner" list="dvPartnerList" value="${esc(t.partner)}">
-            <input data-t="start" type="date" value="${esc(t.start)}">
-            <input data-t="end" type="date" value="${esc(t.end)}">
-            <select data-t="result"><option value="" ${!t.result?'selected':''}>Pending</option><option value="pass" ${t.result==='pass'?'selected':''}>Passed</option><option value="fail" ${t.result==='fail'?'selected':''}>Failed</option></select>
-            <select data-t="brandFeedback">${BRAND_FEEDBACK.map(f=>`<option value="${f.key}" ${(t.brandFeedback||'')===f.key?'selected':''}>${f.label}</option>`).join('')}</select>
-            <input data-t="brandNote" value="${esc(t.brandNote)}" placeholder="e.g. needs to be darker">
-            ${TEST_FIELDS.map(f=>`<input data-t="${f.k}" value="${esc(t[f.k])}">`).join('')}
-            <input data-t="notes" value="${esc(t.notes)}">
-            <button class="icon-btn" data-tact="delTrial" data-i="${i}" title="Remove trial round">✕</button>
-          </div>`).join('')}
-        </div>` : `<p class="dv-muted">No trial rounds yet. Add one each time a partner makes a new attempt at this color.</p>`}
-        <p class="dv-hint">Each round is one shade attempt. Setting a round’s brand feedback to <b>Approved</b> makes it the final shade and moves the color to Stock Offerings. <b>Changes requested</b> sends the color back to coating trial with a new round.</p>
-        <button class="btn secondary" data-tact="addTrial">+ Add trial round</button>
-      </div>`;
+      ${editingIsNew ? '' : `<p class="dv-hint">Steps, trial rounds, test results and brand feedback are in the <b>Progress</b> column.</p>`}`;
   }
-
   function readModal(){
     const v = id => (document.getElementById(id) || {}).value || '';
     const c = editing;
@@ -921,59 +874,29 @@
     c.forecastSqft = v('dvFcSqft') === '' ? '' : String(Math.max(0, Math.round(Number(v('dvFcSqft'))) || 0)); c.forecastQuarter = v('dvFcQ');
     c.texture = v('dvTexture').trim(); c.partner = v('dvPartner').trim(); c.stage = v('dvStage');
     c.availability = v('dvAvail'); c.photosUrl = v('dvPhotos').trim(); c.notes = v('dvNotes');
-    document.querySelectorAll('#dvModal .dv-trial-edit').forEach(row=>{
-      const t = c.trials[Number(row.dataset.i)];
-      row.querySelectorAll('[data-t]').forEach(inp=>{ t[inp.dataset.t] = inp.value.trim(); });
-    });
   }
-
   async function saveModal(){
     readModal();
     const c = editing;
     if(!c.name) return alert('Give the color a name.');
     if(c.photosUrl && !/^https?:\/\//i.test(c.photosUrl)) c.photosUrl = 'https://' + c.photosUrl;
-    let note = '';
-    const before = editingIsNew ? null : byId(c.id);
-    const prevFb = n => { const t = before && before.trials.find(x=>String(x.n)===String(n)); return t ? (t.brandFeedback||'') : ''; };
-    const changed = c.trials.filter(t=>(t.brandFeedback||'') !== prevFb(t.n));
-    const approved = changed.find(t=>t.brandFeedback==='approved');
-    const latest = c.trials[c.trials.length-1];
-    if(approved){
-      c.stage = 'final'; c.finalTrial = approved.n;
-      if(/^#[0-9a-f]{6}$/i.test(approved.hex||'')) c.hex = approved.hex;
-      note = `Trial ${approved.n} approved: ${c.name} is now Approved – final and moves to Stock Offerings.`;
-    } else if(latest && changed.includes(latest) && latest.brandFeedback==='changes'){
-      c.stage = 'coating_trial';
-      c.trials.push({n:(Number(latest.n)||c.trials.length)+1, partner:latest.partner||c.partner||'', start:'', end:'', result:'',
-        hex:latest.hex||c.hex, brandFeedback:'', brandNote:'', ballyFlex:'', martindale:'', coatWeight:'', deltaE:'', L:'', a:'', b:'',
-        notes: latest.brandNote ? `Brand asked: ${latest.brandNote}` : 'Brand requested changes'});
-      note = `Brand requested changes: ${c.name} is back in coating trial, and trial ${Number(latest.n)+1 || c.trials.length} was added.`;
-    } else if(latest && changed.includes(latest) && latest.brandFeedback==='with_brand'){
-      c.stage = 'brand_review';
-      note = `${c.name} is now with the brand for approval.`;
-    }
-    if(c.stage !== 'final') delete c.finalTrial;
-    if(editingIsNew && document.getElementById('dvAddSteps').checked){
-      c.steps = templateSteps(c.partner || 'Pearl', c.forTags[0] || '', document.getElementById('dvStepStart').value);
-    }
+    if(editingIsNew && document.getElementById('dvAddSteps').checked) c.steps = templateSteps(c, document.getElementById('dvStepStart').value);
+    if(c.stage !== 'final') delete c.finalStepId;
     const btn = document.getElementById('dvSave'); btn.disabled = true;
     try {
       await save(c);
       const i = colors.findIndex(x=>x.id===c.id);
       if(i >= 0) colors[i] = c; else colors.push(c);
-      if(editingIsNew) expanded.add(c.id);
-      closeModal(); render();
-      if(note) toast(note);
+      closeModal(); render(); repaintOthers();
     } catch(e){ /* the storage layer shows a banner */ }
     finally { btn.disabled = false; }
   }
-
   async function deleteFromModal(){
     const c = byId(editing.id);
     if(!c || !confirm(`Delete ${c.name}? You can restore it from More → Recently deleted.`)) return;
     c.deletedAt = new Date().toISOString();
     await save(c);
-    selected.delete(c.id); closeModal(); render();
+    selected.delete(c.id); closeModal(); render(); repaintOthers();
     toast(`${c.name} moved to Recently deleted.`);
   }
 
@@ -987,7 +910,6 @@
     el.classList.add('open');
     if(onReady) onReady(el);
   }
-
   function openTrash(){
     const del = colors.filter(c=>c.deletedAt).sort((a,b)=>b.deletedAt.localeCompare(a.deletedAt));
     dialog('Recently deleted', del.length ? `<div class="dv-trash">${del.map(c=>`
@@ -997,7 +919,7 @@
         <button class="btn danger" data-purge="${c.id}">Delete forever</button></div>`).join('')}</div>`
       : '<p class="dv-muted">Nothing has been deleted.</p>', el=>{
       el.querySelectorAll('[data-restore]').forEach(b=>b.addEventListener('click', async ()=>{
-        const c = byId(b.dataset.restore); delete c.deletedAt; await save(c); render(); openTrash();
+        const c = byId(b.dataset.restore); delete c.deletedAt; await save(c); render(); repaintOthers(); openTrash();
       }));
       el.querySelectorAll('[data-purge]').forEach(b=>b.addEventListener('click', async ()=>{
         const c = byId(b.dataset.purge);
@@ -1007,7 +929,6 @@
       }));
     });
   }
-
   function openBases(){
     const used = name => live().filter(c=>c.bases.includes(name)).length;
     dialog('Base color list', `
@@ -1036,17 +957,20 @@
   }
   function stamp(){ return iso(new Date()); }
   function exportJson(){
-    const data = {format:'uncaged-in-development', version:1, exportedAt:new Date().toISOString(), colors: live(), settings};
+    const data = {format:'uncaged-in-development', version:2, exportedAt:new Date().toISOString(), colors: live(), settings};
     download(`in-development-backup-${stamp()}.json`, JSON.stringify(data, null, 1), 'application/json');
   }
   function exportCsv(){
     const q = v => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
-    const head = ['Color','Pantone','For','Material','Base color','Texture','Finish','Forecast sq ft','Forecast quarter','Partner','Stage','Trial rounds','Phase','Step','Owner','Start','End','Days','Status','Notes'];
+    const head = ['Color','Pantone','Project','Material','Base color','Texture','Finish','Forecast sq ft','Forecast quarter','Partner','Stage',
+      'Phase','Round','Step type','Step','Who','Start','End','Days','Status','Result','Brand feedback','Brand comment', ...TEST_FIELDS.map(f=>f.label), 'Notes'];
     const rows = [head];
     live().sort((a,b)=>a.order-b.order).forEach(c=>{
-      const base = [c.name,c.pantone,c.forTags.join('; '),c.material,c.bases.join(' + '),c.texture||'',c.finish,c.forecastSqft||'',c.forecastQuarter||'',c.partner,stageDef(c.stage).label,c.trials.length];
-      if(!c.steps.length) rows.push([...base,'','','','','','','','']);
-      c.steps.forEach(s=>rows.push([...base, phaseOf(s)==='rd'?'R&D':'Brand / production', s.activity, s.owner, s.start, s.end, days(s), s.status, s.notes]));
+      const base = [c.name,c.pantone,c.forTags.join('; '),c.material,c.bases.join(' + '),c.texture||'',c.finish,c.forecastSqft||'',c.forecastQuarter||'',c.partner,stageDef(c.stage).label];
+      if(!c.steps.length) rows.push(base);
+      c.steps.forEach(s=>rows.push([...base, phaseOf(s)==='rd'?'Development':'Brand / production', s.round||'', typeDef(s.type).label, s.activity, s.owner, s.start, s.end, days(s), s.status,
+        typeDef(s.type).result ? (RESULTS.find(r=>r.key===(s.result||''))||{}).label : '', s.type==='brand' ? feedbackLabel(s.brandFeedback) : '', s.brandNote||'',
+        ...TEST_FIELDS.map(f=>s[f.k]||''), s.notes]));
     });
     download(`in-development-${stamp()}.csv`, '﻿' + rows.map(r=>r.map(q).join(',')).join('\r\n'), 'text/csv');
   }
@@ -1073,34 +997,31 @@
         data.settings.baseColors.forEach(b=>{ if(!settings.baseColors.some(x=>x.name===b.name)) settings.baseColors.push(b); });
         await saveSettings();
       }
-      render(); toast(`Imported ${incoming.length} colors.`);
+      render(); repaintOthers(); toast(`Imported ${incoming.length} colors.`);
     });
     inp.click();
   }
 
   // ---------- setup ----------
   function setup(){
-    const roots = ROOTS.map(r=>document.getElementById(r.id)).filter(Boolean);
-    if(!roots.length) return;
-    roots.forEach(root=>{
-      root.addEventListener('change', e=>{ activeRoot = e.currentTarget; onChange(e); });
-      root.addEventListener('click', onClick);
-      root.addEventListener('input', onInput);
-    });
-    const dl = document.createElement('datalist'); dl.id = 'dvOwnerList'; document.body.appendChild(dl);
-    // Read-only view of In Development for the Stock Offerings tab (stock.js).
+    const root = document.getElementById(ROOT_ID);
+    if(!root) return;
+    root.addEventListener('change', onChange);
+    root.addEventListener('click', onClick);
+    root.addEventListener('input', onInput);
+    // Read-only view of In Development for Stock Offerings (stock.js) and Finishing Priorities (prio.js).
     window.devData = {
       colors: () => live(),
+      byId: id => { const c = byId(id); return c && !c.deletedAt ? c : null; },
       bases: () => settings.baseColors.slice(),
       stage: k => stageDef(k),
+      finalShade: c => finalShade(c),
+      trialCount: c => trialCount(c),
       loaded: () => loaded,
     };
-    window.renderDev = function(){
-      dl.innerHTML = allOwners().map(o=>`<option value="${esc(o)}">`).join('');
-      render();
-    };
-    window.renderDev();
-    load().then(()=>{ window.renderDev(); if(typeof window.renderStock === 'function') window.renderStock(); });
+    window.renderDev = render;
+    render();
+    load().then(()=>{ render(); repaintOthers(); });
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setup); else setup();
 })();

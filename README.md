@@ -6,9 +6,10 @@ Features
 Stock Offerings (home tab) – what Uncaged can sell: coating colors by base, each with its material (Signature or Luxe), textures (Fine Grain, Pebble, Nappa) and finishes (Satin, Matte), plus uncoated base material by lot. Colors approved in In Development appear automatically. Stock numbers (panels, sq ft, uncoated yards) are hidden for now: stock.js can read the inventory tracking sheet, but it stays switched off (SHOW_STOCK) until the tracker is connected live to that sheet.
 
 Old Stock Offerings – the original swatch board, kept unchanged for reference.
-In Development – every color being developed, with its base, finish, partner, development stage, trial rounds (with test results) and step-by-step Gantt timeline. Starting data is loaded with More → Import from file; it is not stored in this code.
+In Development – every color being developed, one row each: partner, stage, project, base & texture, progress, testing result, forecasted order (sq ft + quarter) and a Priorities tick box. Click Progress to see and add steps (color matching, trial rounds, Uncaged testing, brand review, ...). Summary cards filter the list, headings sort it, and ticked colors can be updated together. A forecast summary totals base material needs by base, material and texture per quarter. Starting data is loaded with More → Import from file; it is not stored in this code.
 
-In Development 2 – the same colors and data as a table (no timeline): partner, stage, color, project, base, current trial, testing result, brand review and next step. Shown alongside In Development while the team chooses a layout.
+Finishing Priorities – what partners are finishing for Uncaged, in priority order: partner, project, quantity, color / finish / texture, the date Uncaged should receive it and the brand target date. Rows come from In Development (ticked there) or are entered by hand.
+
 Calendar – month view of stage start/end dates
 Textures – procedural texture previews (croc, scale, liquid, marble, lace, …) recolorable to any color in the library
 Client A Event – duplicate textures to build a presentation set in multiple colors

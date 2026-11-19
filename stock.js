@@ -397,14 +397,15 @@
   }
 
   function devFinalCard(c){
-    const t = c.trials.find(x=>String(x.n)===String(c.finalTrial)) || c.trials[c.trials.length-1] || {};
+    const t = window.devData.finalShade(c) || {};
+    const rounds = window.devData.trialCount(c);
     const tests = TEST_FIELDS.filter(f=>t[f.k]!=='' && t[f.k]!=null).map(f=>`${f.label} ${esc(t[f.k])}`);
     return `<div class="so-card so-new">
       <div class="so-swatch" style="background:${esc(c.hex||'#ddd')};color:${contrast(c.hex)}"><span class="so-mat">${esc(c.material||'Material not set')}</span></div>
       <div class="so-body">
         <div class="so-title">${esc(c.name)}</div>
         <div class="so-sub">${[c.pantone ? 'Pantone ' + esc(c.pantone) : '', c.bases.length ? 'Base: ' + c.bases.map(esc).join(' + ') : 'Base not set', c.finish ? esc(c.finish) : ''].filter(Boolean).join(' · ')}</div>
-        <div class="so-badge">Approved in In Development · ${c.trials.length} trial round${c.trials.length===1?'':'s'}</div>
+        <div class="so-badge">Approved in In Development · ${rounds} trial round${rounds===1?'':'s'}</div>
         ${c.forTags.length ? `<div class="dv-tags">${c.forTags.map(x=>`<span class="dv-tag">${esc(x)}</span>`).join('')}</div>` : ''}
         ${tests.length ? `<div class="so-tests">${tests.join(' · ')}</div>` : ''}
         <button class="btn secondary so-addbtn" data-act="adoptDev" data-dev="${c.id}">${SHOW_STOCK ? 'Add textures &amp; stock details' : 'Add textures &amp; details'}</button>
@@ -482,7 +483,7 @@
         const c = window.devData.colors().find(x=>x.id===btn.dataset.dev);
         if(c && c.stage === 'final') return adoptDev(c);
         // A color still in development: open the In Development tab.
-        document.querySelector('.tab-btn[data-view="dev"]').click(); return;
+        document.querySelector('.tab-btn[data-view="dev2"]').click(); return;
       }
       case 'new': return openModal(null, true);
       case 'adoptDev': return adoptDev(window.devData.colors().find(x=>x.id===btn.dataset.dev));
@@ -501,7 +502,7 @@
     const o = Object.assign(blankOffer(), {color:c.name, material:c.material||'Signature', hex:c.hex, pantone:c.pantone,
       bases:c.bases.slice(), forTags:c.forTags.slice(), photosUrl:c.photosUrl||'', devId:c.id, availability:c.availability||'',
       textures:[{texture: parseTexture(c.texture).texture || 'Pebble', finish: c.finish==='Matte' ? 'Matte' : 'Satin'}]});
-    const t = c.trials.find(x=>String(x.n)===String(c.finalTrial)) || c.trials[c.trials.length-1];
+    const t = window.devData.finalShade(c);
     if(t) TEST_FIELDS.forEach(f=>{ o[f.k] = t[f.k] || ''; });
     return openModal(o, true);
   }
