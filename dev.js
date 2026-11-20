@@ -39,7 +39,18 @@
     {key:'brand',       label:'Brand review',          owner:'brand', feedback:true},
     {key:'other',       label:'Other',                 owner:''},
   ];
-  const typeDef = k => STEP_TYPES.find(t=>t.key===k) || STEP_TYPES[STEP_TYPES.length-1];
+  // Step types added by the team ("+ Add new…") are stored as "custom:<name>" and behave like Other.
+  const allTypes = () => [...STEP_TYPES, ...window.lists.get('stepType', []).map(l=>({key:'custom:'+l, label:l, owner:''}))];
+  const typeDef = k => allTypes().find(t=>t.key===k) ||
+    (String(k).startsWith('custom:') ? {key:k, label:String(k).slice(7), owner:''} : STEP_TYPES[STEP_TYPES.length-1]);
+  // Dropdowns backed by a shared list get "+ Add new…" (see lists.js).
+  const LA = (name, label, prefix) => window.lists.attrs(name, label, prefix);
+  const LO = (name, base, val, blank) => window.lists.opts(name, base, val, blank);
+  function typeOptions(val){
+    return allTypes().map(x=>`<option value="${esc(x.key)}" ${x.key===val?'selected':''}>${esc(x.label)}</option>`).join('') +
+      (val && !allTypes().some(x=>x.key===val) ? `<option value="${esc(val)}" selected>${esc(typeDef(val).label)}</option>` : '') +
+      `<option value="__new__">+ Add new…</option>`;
+  }
   const BRAND_FEEDBACK = [
     {key:'',           label:'Not sent'},
     {key:'with_brand', label:'With brand'},
@@ -95,18 +106,25 @@
   let colors = [];
   let settings = {baseColors: DEFAULT_BASES.map(n=>({name:n, active:true}))};
   let loaded = false, loadError = '';
-  const ui = Object.assign({groupBy:'none', stage:'all', q:'', showDone:false, card:'', sortKey:'', sortDir:1}, readPrefs());
+  // The list opens on the stages being worked on now; any mix of stages can be picked.
+  const DEFAULT_STAGES = ['coating_trial','testing','failed_retrying'];
+  const ui = Object.assign({groupBy:'none', q:'', stages:new Set(DEFAULT_STAGES), sortKey:'', sortDir:1}, readPrefs());
+  const sameSet = (a, list) => a.size === list.length && list.every(x=>a.has(x));
   // Summary cards double as quick filters. "With brand" is waiting on the
   // brand, so it is not counted as active R&D.
   const CARDS = [
-    {key:'active',  label:'Active in R&amp;D', test:c=>!DONE_STAGES.includes(c.stage) && c.stage!=='on_hold' && c.stage!=='brand_review', title:'Not with the brand, on hold, approved or stopped'},
-    {key:'coating', label:'Coating trial',     test:c=>c.stage==='coating_trial'},
-    {key:'testing', label:'Testing / passed',  test:c=>c.stage==='testing' || c.stage==='passed', title:'Testing in progress, or passed and not yet sent to the brand'},
-    {key:'brand',   label:'With brand',        test:c=>c.stage==='brand_review'},
-    {key:'retry',   label:'Failed – retrying', test:c=>c.stage==='failed_retrying'},
-    {key:'hold',    label:'On hold',           test:c=>c.stage==='on_hold'},
-    {key:'final',   label:'Approved → Stock Offerings', test:c=>c.stage==='final', cls:'dv-passed', title:'Final approved shades'},
+    {key:'active',  label:'Active in R&amp;D', stages:['to_be_trialed','coating_trial','testing','passed','failed_retrying'], title:'Not with the brand, on hold, approved or stopped'},
+    {key:'coating', label:'Coating trial',     stages:['coating_trial']},
+    {key:'testing', label:'Testing / passed',  stages:['testing','passed'], title:'Testing in progress, or passed and not yet sent to the brand'},
+    {key:'brand',   label:'With brand',        stages:['brand_review']},
+    {key:'retry',   label:'Failed – retrying', stages:['failed_retrying']},
+    {key:'hold',    label:'On hold',           stages:['on_hold']},
+    {key:'final',   label:'Approved → Stock Offerings', stages:['final'], cls:'dv-passed', title:'Final approved shades'},
   ];
+  // A color can be approved for Uncaged's own stock while it is still in another
+  // stage (e.g. with a brand). "Approved – final" always counts as approved.
+  const isApproved = c => c.stage === 'final' || !!c.approvedStock;
+  CARDS.forEach(k=>{ k.test = k.key === 'final' ? isApproved : (c => k.stages.includes(c.stage)); });
   const ROOT_ID = 'dev2Root';
   const selected = new Set();
   let editing = null, editingIsNew = false;   // color details pop-up
@@ -262,12 +280,7 @@
 
   // ---------- filtering, grouping, sorting ----------
   function matches(c){
-    const card = CARDS.find(x=>x.key===ui.card);
-    if(card){ if(!card.test(c)) return false; }
-    else {
-      if(ui.stage !== 'all' && c.stage !== ui.stage) return false;
-      if(ui.stage === 'all' && !ui.showDone && DONE_STAGES.includes(c.stage)) return false;
-    }
+    if(!ui.stages.has(c.stage) && !(ui.stages.has('final') && isApproved(c))) return false;
     const q = ui.q.trim().toLowerCase();
     if(!q) return true;
     return [c.name, c.pantone, c.partner, c.material, c.finish, c.texture, c.notes, ...c.forTags, ...c.bases]
@@ -334,13 +347,6 @@
               ${[['none','No grouping'],['base','Base color'],['partner','Partner']].map(([k,l])=>`<option value="${k}" ${ui.groupBy===k?'selected':''}>${l}</option>`).join('')}
             </select>
           </label>
-          <label class="dv-inline">Stage
-            <select data-act="stageFilter">
-              <option value="all">All except approved &amp; stopped</option>
-              ${STAGES.map(s=>`<option value="${s.key}" ${ui.stage===s.key?'selected':''}>${esc(s.label)} (${live().filter(c=>c.stage===s.key).length})</option>`).join('')}
-            </select>
-          </label>
-          <label class="dv-inline"><input type="checkbox" data-act="showDone" ${ui.showDone?'checked':''}> Show approved &amp; stopped colors</label>
         </div>
         <div class="dv-tools-right">
           <div class="dv-menu">
@@ -356,6 +362,7 @@
           <button class="btn" data-act="new">+ New color</button>
         </div>
       </div>
+      ${stageChipsHTML()}
       ${bulkHTML()}
       ${live().length === 0 ? emptyHTML() : tableHTML(gs)}`;
     if(focusKey){
@@ -370,11 +377,25 @@
   function summaryHTML(){
     const L = live();
     return `<div class="summary dv-cards">
-      ${CARDS.map(k=>`<button type="button" class="summary-card dv-card ${k.cls||''} ${ui.card===k.key?'on':''}" data-act="card" data-k="${k.key}"
-        title="${esc((k.title ? k.title + '. ' : '') + (ui.card===k.key ? 'Click again to show all' : 'Click to show only these'))}" aria-pressed="${ui.card===k.key}">
-        <div class="num">${L.filter(k.test).length}</div><div class="lbl">${k.label}</div></button>`).join('')}
-    </div>
-    ${ui.card ? `<div class="dv-cardfilter">Showing only <b>${CARDS.find(k=>k.key===ui.card).label}</b> <button class="linkish" data-act="card" data-k="${ui.card}">Show all</button></div>` : ''}`;
+      ${CARDS.map(k=>{ const on = sameSet(ui.stages, k.stages);
+        return `<button type="button" class="summary-card dv-card ${k.cls||''} ${on?'on':''}" data-act="card" data-k="${k.key}"
+        title="${esc((k.title ? k.title + '. ' : '') + (on ? 'Click again to go back to the default view' : 'Click to show only these'))}" aria-pressed="${on}">
+        <div class="num">${L.filter(k.test).length}</div><div class="lbl">${k.label}</div></button>`; }).join('')}
+    </div>`;
+  }
+  // Stage filter: tick any mix of stages. Opens on the default set.
+  function stageChipsHTML(){
+    const L = live(), isDefault = sameSet(ui.stages, DEFAULT_STAGES), isAll = ui.stages.size === STAGES.length;
+    return `<div class="dv-stagechips" role="group" aria-label="Show stages">
+      <span class="dv-stagechips-lbl">Show stages</span>
+      ${STAGES.map(s=>{ const on = ui.stages.has(s.key), n = L.filter(c=> s.key === 'final' ? isApproved(c) : c.stage===s.key).length;
+        return `<button type="button" class="dv-chip ${on?'on':''}" data-act="stageChip" data-k="${s.key}" aria-pressed="${on}" style="--chip:${s.color}">
+          <span class="dv-chip-dot"></span>${esc(s.label)} <span class="dv-chip-n">${n}</span></button>`; }).join('')}
+      <span class="dv-stagechips-btns">
+        ${isDefault ? '' : `<button class="linkish" data-act="stagesDefault">Default view</button>`}
+        ${isAll ? '' : `<button class="linkish" data-act="stagesAll">All stages</button>`}
+      </span>
+    </div>`;
   }
   function emptyHTML(){
     return `<div class="dv-empty"><p><b>No colors in development yet.</b></p>
@@ -400,7 +421,7 @@
       ${sortRows(list).map(c=>rowHTML(c, name)).join('')}`).join('');
     return `${forecastHTML()}<div class="dt-wrap"><table class="dt">
       <thead><tr>${head}</tr></thead>
-      <tbody>${list0(gs) ? body : `<tr><td colspan="${cols.length}" class="dv-muted" style="padding:16px">No colors match these filters.${!ui.showDone ? ' Approved and stopped colors are hidden. Turn on “Show approved &amp; stopped colors” to see them.' : ''}</td></tr>`}</tbody>
+      <tbody>${list0(gs) ? body : `<tr><td colspan="${cols.length}" class="dv-muted" style="padding:16px">No colors in the stages you’ve picked. Tick more stages under <b>Show stages</b>, or choose <b>All stages</b>.</td></tr>`}</tbody>
     </table></div>`;
   }
   const list0 = gs => gs.some(([,l])=>l.length);
@@ -422,7 +443,7 @@
     const fmtN = n => Math.round(n).toLocaleString('en-US');
     const grand = [...rows.values()].reduce((a,r)=>a+r.total,0);
     return `<div class="dt-fcbox">
-      <div class="dt-fc-title">Forecasted base material needs <span class="dv-muted">from forecasted orders below · ${list.length} color${list.length===1?'':'s'}</span></div>
+      <div class="dt-fc-title">Forecasted base material needs <span class="dv-muted">every color with a forecasted order · ${list.length} color${list.length===1?'':'s'}, including approved ones</span></div>
       <div class="dt-fc-scroll"><table class="dt-mini dt-fc-table">
         <thead><tr><th>Base</th><th>Material</th><th>Texture</th>${qs.map(q=>`<th class="r">${esc(q)}</th>`).join('')}<th class="r">Total sq ft</th><th class="r">≈ Usable yds</th></tr></thead>
         <tbody>${[...rows.values()].sort((a,b)=>b.total-a.total).map(r=>`<tr title="${esc(r.colors.join(', '))}">
@@ -432,7 +453,7 @@
           <tr class="dt-fc-total"><td colspan="3">All forecasts</td>${qs.map(q=>`<td class="r">${fmtN([...rows.values()].reduce((a,r)=>a+(r.byQ[q]||0),0))}</td>`).join('')}
           <td class="r"><b>${fmtN(grand)}</b></td><td class="r">${fmtN(grand / SQFT_PER_YARD)}</td></tr>
         </tbody></table></div>
-      <div class="dv-muted dt-fc-note">Yards use the Vault's rule (12.5 sq ft per usable yard). A color on two bases (e.g. Natural + Off-White) is counted once, on a combined line.</div>
+      <div class="dv-muted dt-fc-note">Yards use the Vault's rule (12.5 sq ft per usable yard). A color on two bases (e.g. Natural + Off-White) is counted once, on a combined line. Totals don't change with the stage filter; only “Failed – no more trials” is left out.</div>
     </div>`;
   }
 
@@ -465,11 +486,13 @@
       </div></td>
       <td>${esc(c.partner||'—')}</td>
       <td><select class="dv-stage" data-c="${c.id}" data-f="stage" data-fk="${esc(fk)}|stage" style="background:${st.color};color:${contrast(st.color)}">
-        ${STAGES.map(x=>`<option value="${x.key}" ${c.stage===x.key?'selected':''}>${esc(x.label)}</option>`).join('')}</select></td>
+        ${STAGES.map(x=>`<option value="${x.key}" ${c.stage===x.key?'selected':''}>${esc(x.label)}</option>`).join('')}</select>
+        <label class="dt-stockflag ${isApproved(c)?'on':''}" title="${c.stage==='final' ? 'Approved – final always counts as approved for our stock' : 'Also approved for Uncaged stock: it shows on Stock Offerings while it stays in this stage'}">
+          <input type="checkbox" data-c="${c.id}" data-f="approvedStock" ${isApproved(c)?'checked':''} ${c.stage==='final'?'disabled':''}> Approved for our stock</label></td>
       <td>${c.forTags.length ? c.forTags.map(x=>`<span class="dv-tag">${esc(x)}</span>`).join(' ') : '<span class="dv-muted">—</span>'}</td>
       <td>${c.bases.length ? `<b class="dt-base">${esc(c.bases.join(' + '))}</b>` : '<span class="dv-muted">Base not set</span>'}
-        <div><select class="dt-tex ${c.texture ? '' : 'unset'}" data-c="${c.id}" data-f="texture" data-fk="${esc(fk)}|texture" title="Texture it is being tested on">
-          <option value="">Texture?</option>${[...new Set([...DEV_TEXTURES, ...(c.texture ? [c.texture] : [])])].map(x=>`<option ${c.texture===x?'selected':''}>${esc(x)}</option>`).join('')}
+        <div><select class="dt-tex ${c.texture ? '' : 'unset'}" data-c="${c.id}" data-f="texture" data-fk="${esc(fk)}|texture" title="Texture it is being tested on" ${LA('texture','texture')}>
+          ${LO('texture', DEV_TEXTURES, c.texture, 'Texture?')}
         </select></div>
         ${[c.material, c.finish].filter(Boolean).length ? `<div class="dv-muted">${esc([c.material, c.finish].filter(Boolean).join(' · '))}</div>` : ''}</td>
       <td class="dt-progcell">${progressHTML(c)}</td>
@@ -495,7 +518,7 @@
         <span class="dv-bulk-group">Set
           <select id="dvBulkStage" title="Stage"><option value="">Stage…</option>${STAGES.map(s=>`<option value="${s.key}">${esc(s.label)}</option>`).join('')}</select>
           <input id="dvBulkPartner" list="dvPartnerListBulk" placeholder="Partner…" title="Partner"><datalist id="dvPartnerListBulk">${allPartners().map(p=>`<option value="${esc(p)}">`).join('')}</datalist>
-          <select id="dvBulkTexture" title="Texture"><option value="">Texture…</option>${DEV_TEXTURES.map(t=>`<option>${t}</option>`).join('')}</select>
+          <select id="dvBulkTexture" title="Texture" ${LA('texture','texture')}>${LO('texture', DEV_TEXTURES, '', 'Texture…')}</select>
           <select id="dvBulkQuarter" title="Forecast quarter"><option value="">Forecast quarter…</option>${quarterOptions().map(q=>`<option>${q}</option>`).join('')}</select>
           <button class="btn" data-act="bulkSet">Apply</button>
         </span>
@@ -504,14 +527,14 @@
       </div>
       <div class="dv-bulk-line">
         <span class="dv-bulk-group">Add a step to each
-          <select id="dvBulkAddType">${STEP_TYPES.map(t=>`<option value="${t.key}">${t.label}</option>`).join('')}</select>
-          <select id="dvBulkAddStatus">${STEP_STATUSES.map(s=>`<option>${s}</option>`).join('')}</select>
+          <select id="dvBulkAddType" ${LA('stepType','step type','custom:')}>${typeOptions('send')}</select>
+          <select id="dvBulkAddStatus" ${LA('stepStatus','status')}>${LO('stepStatus', STEP_STATUSES, 'Not started', null)}</select>
           <input type="date" id="dvBulkAddStart" title="Start"><input type="date" id="dvBulkAddEnd" title="End">
           <button class="btn" data-act="bulkAdd">Add</button>
         </span>
         <span class="dv-bulk-group">Update each one's latest
-          <select id="dvBulkUpdType">${STEP_TYPES.map(t=>`<option value="${t.key}">${t.label}</option>`).join('')}</select>
-          <select id="dvBulkUpdStatus"><option value="">Status…</option>${STEP_STATUSES.map(s=>`<option>${s}</option>`).join('')}</select>
+          <select id="dvBulkUpdType" ${LA('stepType','step type','custom:')}>${typeOptions('testing')}</select>
+          <select id="dvBulkUpdStatus" ${LA('stepStatus','status')}>${LO('stepStatus', STEP_STATUSES, '', 'Status…')}</select>
           <select id="dvBulkUpdResult"><option value="">Result…</option>${RESULTS.filter(r=>r.key).map(r=>`<option value="${r.key}">${r.label}</option>`).join('')}<option value="pending">Pending</option></select>
           <input type="date" id="dvBulkUpdEnd" title="End date">
           <button class="btn" data-act="bulkUpd">Update</button>
@@ -525,8 +548,6 @@
     const el = e.target;
     const act = el.dataset.act;
     if(act === 'groupBy'){ ui.groupBy = el.value; writePrefs(); return render(); }
-    if(act === 'stageFilter'){ ui.stage = el.value; ui.card = ''; return render(); }
-    if(act === 'showDone'){ ui.showDone = el.checked; return render(); }
     if(act === 'select'){ el.checked ? selected.add(el.dataset.c) : selected.delete(el.dataset.c); return render(); }
     if(act === 'selectAll'){ visibleIds().forEach(id=> el.checked ? selected.add(id) : selected.delete(id)); return render(); }
     if(act === 'prio'){
@@ -536,6 +557,11 @@
     }
     const c = byId(el.dataset.c); const f = el.dataset.f;
     if(!c || !f) return;
+    if(f === 'approvedStock'){
+      c.approvedStock = el.checked; saveQuietly(c); repaintOthers();
+      toast(el.checked ? `${c.name} is approved for our stock and now shows on Stock Offerings. Its stage stays “${stageDef(c.stage).label}”.` : `${c.name} is no longer marked approved for our stock.`);
+      return setTimeout(render, 0);
+    }
     if(f === 'texture' || f === 'forecastSqft' || f === 'forecastQuarter'){
       c[f] = f === 'forecastSqft' ? (el.value === '' ? '' : String(Math.max(0, Math.round(Number(el.value)) || 0))) : el.value;
       saveQuietly(c); repaintOthers();
@@ -543,8 +569,8 @@
     }
     if(f === 'stage'){
       c.stage = el.value; saveQuietly(c); repaintOthers();
-      if(c.stage === 'final' && !ui.showDone) toast(`${c.name} is approved – final. It moves to Stock Offerings and is hidden here.`);
-      else if(c.stage === 'failed_stopped' && !ui.showDone) toast(`${c.name} marked “no more trials” and hidden here.`);
+      if(c.stage === 'final') toast(`${c.name} is approved – final. It now shows on Stock Offerings.`);
+      if(!ui.stages.has(c.stage)) setTimeout(()=>toast(`${c.name} is now “${stageDef(c.stage).label}”, which isn’t ticked under Show stages, so it’s hidden.`), c.stage==='final' ? 2500 : 0);
       return setTimeout(render, 0);
     }
   }
@@ -567,7 +593,11 @@
       case 'steps': return openSteps(c);
       case 'new': return openModal(null, true);
       case 'clearSel': selected.clear(); return render();
-      case 'card': ui.card = ui.card === btn.dataset.k ? '' : btn.dataset.k; if(ui.card) ui.stage = 'all'; return render();
+      case 'card': { const k = CARDS.find(x=>x.key===btn.dataset.k);
+        ui.stages = new Set(sameSet(ui.stages, k.stages) ? DEFAULT_STAGES : k.stages); return render(); }
+      case 'stageChip': { const k = btn.dataset.k; ui.stages.has(k) ? ui.stages.delete(k) : ui.stages.add(k); return render(); }
+      case 'stagesDefault': ui.stages = new Set(DEFAULT_STAGES); return render();
+      case 'stagesAll': ui.stages = new Set(STAGES.map(x=>x.key)); return render();
       case 'sort':
         if(ui.sortKey !== btn.dataset.k){ ui.sortKey = btn.dataset.k; ui.sortDir = 1; }
         else if(ui.sortDir === 1) ui.sortDir = -1;
@@ -695,12 +725,12 @@
         return `<div class="st-row ${filled ? 'more' : ''} st-${esc(s.type)}" data-id="${s.id}">
           <div class="st-line">
             <span class="st-round" title="Round"><input data-k="round" type="number" min="1" value="${esc(s.round||1)}" aria-label="Round"></span>
-            <select data-k="type" title="Step type">${STEP_TYPES.map(x=>`<option value="${x.key}" ${s.type===x.key?'selected':''}>${x.label}</option>`).join('')}</select>
+            <select data-k="type" title="Step type" ${LA('stepType','step type','custom:')}>${typeOptions(s.type)}</select>
             <input data-k="activity" class="st-label" value="${esc(s.activity)}" placeholder="Description">
             <input data-k="owner" list="dvOwnerListSt" value="${esc(s.owner)}" placeholder="Who" class="st-owner">
             <input data-k="start" type="date" value="${esc(s.start)}" title="Start">
             <input data-k="end" type="date" value="${esc(s.end)}" title="End">
-            <select data-k="status" class="st-status st-${esc((s.status||'').replace(/\s+/g,'-').toLowerCase())}">${STEP_STATUSES.map(x=>`<option ${s.status===x?'selected':''}>${x}</option>`).join('')}</select>
+            <select data-k="status" class="st-status st-${esc((s.status||'').replace(/\s+/g,'-').toLowerCase())}" ${LA('stepStatus','status')}>${LO('stepStatus', STEP_STATUSES, s.status, null)}</select>
             <span class="st-btns">
               <button class="icon-btn" data-st="up" data-id="${s.id}" title="Move up" ${i===0?'disabled':''}>↑</button>
               <button class="icon-btn" data-st="down" data-id="${s.id}" title="Move down" ${i===rd.length-1?'disabled':''}>↓</button>
@@ -720,7 +750,7 @@
       <div class="st-add">
         <span class="dv-muted">Add a step:</span>
         ${['color_match','trial','ship_in','testing','ship_brand','brand'].map(k=>`<button class="btn secondary" data-st="add" data-type="${k}">+ ${typeDef(k).label}</button>`).join('')}
-        <span class="st-add-other"><select id="dvStepAddType">${STEP_TYPES.map(x=>`<option value="${x.key}">${x.label}</option>`).join('')}</select><button class="btn secondary" data-st="add">+ Add</button></span>
+        <span class="st-add-other"><select id="dvStepAddType" ${LA('stepType','step type','custom:')}>${typeOptions('send')}</select><button class="btn secondary" data-st="add">+ Add</button></span>
       </div>
       <p class="dv-hint">A <b>Trial round</b> is one shade attempt and starts a new round. Setting a <b>Brand review</b> to <b>Approved</b> makes the latest trial the final shade and moves the color to Stock Offerings. <b>Changes requested</b> sends it back to coating trial and adds the next trial round.</p>
       ${prod ? `<p class="dv-muted dv-prod-note">${prod} brand / production step${prod===1?'':'s'} (purchase order, production run) saved for a future Production tab.</p>` : ''}`;
@@ -842,18 +872,19 @@
         <div class="form-field"><label>Project (brand or collection)</label>
           <input id="dvFor" list="dvForList" value="${esc(c.forTags.join(', '))}" placeholder="e.g. Reformation, Spring '27">
           <span class="dv-hint">Separate several with commas</span></div>
-        <div class="form-field"><label>Material</label><select id="dvMaterial">${opt(MATERIALS, c.material, 'Not set')}</select></div>
-        <div class="form-field"><label>Finish</label><select id="dvFinish">${opt(FINISHES, c.finish, 'Not set')}</select></div>
+        <div class="form-field"><label>Material</label><select id="dvMaterial" ${LA('material','material')}>${LO('material', MATERIALS, c.material, 'Not set')}</select></div>
+        <div class="form-field"><label>Finish</label><select id="dvFinish" ${LA('finish','finish')}>${LO('finish', FINISHES, c.finish, 'Not set')}</select></div>
         <div class="form-field full"><label>Base color</label><div class="dv-checks">
           ${baseNames.map(b=>`<label><input type="checkbox" class="dvBase" value="${esc(b)}" ${c.bases.includes(b)?'checked':''}> ${esc(b)}</label>`).join('')}
         </div></div>
-        <div class="form-field"><label>Base used</label><select id="dvBaseForm">${opt(BASE_FORMS, c.baseForm, 'Not set')}</select></div>
-        <div class="form-field"><label>Texture tested on</label><select id="dvTexture">${opt(DEV_TEXTURES, c.texture, 'Not set')}</select></div>
+        <div class="form-field"><label>Base used</label><select id="dvBaseForm" ${LA('baseForm','base type')}>${LO('baseForm', BASE_FORMS, c.baseForm, 'Not set')}</select></div>
+        <div class="form-field"><label>Texture tested on</label><select id="dvTexture" ${LA('texture','texture')}>${LO('texture', DEV_TEXTURES, c.texture, 'Not set')}</select></div>
         <div class="form-field"><label>Partner (trial location)</label><input id="dvPartner" list="dvPartnerList" value="${esc(c.partner)}"></div>
-        <div class="form-field"><label>Development stage</label><select id="dvStage">${STAGES.map(s=>`<option value="${s.key}" ${c.stage===s.key?'selected':''}>${esc(s.label)}</option>`).join('')}</select></div>
+        <div class="form-field"><label>Development stage</label><select id="dvStage">${STAGES.map(s=>`<option value="${s.key}" ${c.stage===s.key?'selected':''}>${esc(s.label)}</option>`).join('')}</select>
+          <label class="dv-inline" style="margin-top:6px"><input type="checkbox" id="dvApproved" ${c.approvedStock?'checked':''}> Also approved for our stock (shows on Stock Offerings)</label></div>
         <div class="form-field"><label>Forecasted order (sq ft)</label><input id="dvFcSqft" type="number" min="0" step="10" value="${esc(c.forecastSqft||'')}"></div>
         <div class="form-field"><label>Forecasted order quarter</label><select id="dvFcQ"><option value="">Not set</option>${quarterOptions(c.forecastQuarter).map(q=>`<option ${c.forecastQuarter===q?'selected':''}>${q}</option>`).join('')}</select></div>
-        <div class="form-field full"><label>Availability</label><select id="dvAvail">${opt(AVAILABILITY, c.availability, 'Not set')}</select></div>
+        <div class="form-field full"><label>Availability</label><select id="dvAvail" ${LA('availability','availability option')}>${LO('availability', AVAILABILITY, c.availability, 'Not set')}</select></div>
         <div class="form-field full"><label>Photos link (e.g. Dropbox)</label><input id="dvPhotos" value="${esc(c.photosUrl)}" placeholder="https://"></div>
         <div class="form-field full"><label>Notes</label><textarea id="dvNotes" rows="2">${esc(c.notes)}</textarea></div>
         ${editingIsNew ? `
@@ -872,7 +903,7 @@
     c.material = v('dvMaterial'); c.finish = v('dvFinish'); c.baseForm = v('dvBaseForm');
     c.bases = [...document.querySelectorAll('#dvModal .dvBase:checked')].map(x=>x.value);
     c.forecastSqft = v('dvFcSqft') === '' ? '' : String(Math.max(0, Math.round(Number(v('dvFcSqft'))) || 0)); c.forecastQuarter = v('dvFcQ');
-    c.texture = v('dvTexture').trim(); c.partner = v('dvPartner').trim(); c.stage = v('dvStage');
+    c.texture = v('dvTexture').trim(); c.partner = v('dvPartner').trim(); c.stage = v('dvStage'); c.approvedStock = !!(document.getElementById('dvApproved')||{}).checked;
     c.availability = v('dvAvail'); c.photosUrl = v('dvPhotos').trim(); c.notes = v('dvNotes');
   }
   async function saveModal(){
@@ -1017,6 +1048,8 @@
       stage: k => stageDef(k),
       finalShade: c => finalShade(c),
       trialCount: c => trialCount(c),
+      stepType: c => (currentStep(c) || {}).type || '',
+      isApproved: c => isApproved(c),
       loaded: () => loaded,
     };
     window.renderDev = render;

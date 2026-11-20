@@ -56,6 +56,11 @@
     ['Luxe','Onyx','#161513','',['Onyx'],[['Fine Grain','']]],
   ];
 
+  // Dropdowns backed by a shared list get "+ Add new…" (see lists.js).
+  const LA = (name, label) => window.lists.attrs(name, label);
+  const LO = (name, base, val, blank) => window.lists.opts(name, base, val, blank);
+  const LG = (name, base) => window.lists.get(name, base);
+
   let offers = [];
   let snap = null;
   let settings = {seeded:false};
@@ -132,7 +137,7 @@
   }
   function devFinals(){
     if(!dev()) return [];
-    return dev().colors().filter(c=>c.stage==='final' && !live().some(o=>o.devId===c.id));
+    return dev().colors().filter(c=>dev().isApproved(c) && !live().some(o=>o.devId===c.id));
   }
   function devInProgress(){
     if(!dev()) return [];
@@ -185,8 +190,8 @@
           <div class="so-seg">${[['all','All'],['coating','Coating colors'],['base','Base colors']].map(([k,l])=>
             `<button class="${ui.view===k?'active':''}" data-act="view" data-v="${k}">${l}</button>`).join('')}</div>
           <input type="search" class="dv-search" placeholder="Search colors, Pantone, brand…" value="${esc(ui.q)}" data-act="search" data-fk="search">
-          <label class="dv-inline">Material <select data-act="material"><option value="">All</option>${MATERIALS.map(m=>`<option ${ui.material===m?'selected':''}>${m}</option>`).join('')}</select></label>
-          <label class="dv-inline">Texture <select data-act="texture"><option value="">All</option>${TEXTURES.map(t=>`<option ${ui.texture===t?'selected':''}>${t}</option>`).join('')}</select></label>
+          <label class="dv-inline">Material <select data-act="material"><option value="">All</option>${LG('material', MATERIALS).map(m=>`<option ${ui.material===m?'selected':''}>${m}</option>`).join('')}</select></label>
+          <label class="dv-inline">Texture <select data-act="texture"><option value="">All</option>${LG('texture', TEXTURES).map(t=>`<option ${ui.texture===t?'selected':''}>${t}</option>`).join('')}</select></label>
           <label class="dv-inline"><input type="checkbox" data-act="showDev" ${ui.showDev?'checked':''}> Include colors in development</label>
         </div>
         <div class="dv-tools-right">
@@ -405,7 +410,7 @@
       <div class="so-body">
         <div class="so-title">${esc(c.name)}</div>
         <div class="so-sub">${[c.pantone ? 'Pantone ' + esc(c.pantone) : '', c.bases.length ? 'Base: ' + c.bases.map(esc).join(' + ') : 'Base not set', c.finish ? esc(c.finish) : ''].filter(Boolean).join(' · ')}</div>
-        <div class="so-badge">Approved in In Development · ${rounds} trial round${rounds===1?'':'s'}</div>
+        <div class="so-badge">Approved in In Development · ${rounds} trial round${rounds===1?'':'s'}${c.stage!=='final' ? ` · also ${esc(window.devData.stage(c.stage).label.toLowerCase())}` : ''}</div>
         ${c.forTags.length ? `<div class="dv-tags">${c.forTags.map(x=>`<span class="dv-tag">${esc(x)}</span>`).join('')}</div>` : ''}
         ${tests.length ? `<div class="so-tests">${tests.join(' · ')}</div>` : ''}
         <button class="btn secondary so-addbtn" data-act="adoptDev" data-dev="${c.id}">${SHOW_STOCK ? 'Add textures &amp; stock details' : 'Add textures &amp; details'}</button>
@@ -481,7 +486,7 @@
       case 'tex': e.stopPropagation(); preview[btn.dataset.id] = Number(btn.dataset.i); return render();
       case 'detailDev': {
         const c = window.devData.colors().find(x=>x.id===btn.dataset.dev);
-        if(c && c.stage === 'final') return adoptDev(c);
+        if(c && window.devData.isApproved(c) && !live().some(o=>o.devId===c.id)) return adoptDev(c);
         // A color still in development: open the In Development tab.
         document.querySelector('.tab-btn[data-view="dev2"]').click(); return;
       }
@@ -566,14 +571,14 @@
     document.getElementById('soModalBody').innerHTML = `
       <div class="form-grid">
         <div class="form-field"><label>Color name</label><input id="soColor" value="${esc(o.color)}" placeholder="e.g. Aubergine"></div>
-        <div class="form-field"><label>Material</label><select id="soMaterial">${opts(MATERIALS, o.material)}</select></div>
+        <div class="form-field"><label>Material</label><select id="soMaterial" ${LA('material','material')}>${LO('material', MATERIALS, o.material, null)}</select></div>
         <div class="form-field"><label>Pantone code</label><input id="soPantone" value="${esc(o.pantone)}"></div>
         <div class="form-field"><label>Swatch color</label><div class="hex-row">
           <input type="color" id="soHexPick" value="${/^#[0-9a-f]{6}$/i.test(o.hex)?esc(o.hex):'#B9A58C'}"><input id="soHex" value="${esc(o.hex)}"></div></div>
         <div class="form-field full"><label>Textures &amp; finishes offered</label>
           <div class="so-texedit">${o.textures.map((t,i)=>`<div class="so-texedit-row" data-i="${i}">
-            <select data-k="texture">${opts(TEXTURES, t.texture)}</select>
-            <select data-k="finish">${opts(FINISHES, t.finish, 'No finish set')}</select>
+            <select data-k="texture" ${LA('texture','texture')}>${LO('texture', TEXTURES, t.texture, null)}</select>
+            <select data-k="finish" ${LA('finish','finish')}>${LO('finish', FINISHES, t.finish, 'No finish set')}</select>
             <button class="icon-btn" data-tx="del" data-i="${i}" title="Remove">✕</button></div>`).join('')}
             <button class="linkish" data-tx="add">+ Add texture</button></div></div>
         <div class="form-field full"><label>Base color</label><div class="dv-checks">
@@ -581,7 +586,7 @@
         <div class="form-field"><label>For (brand or collection)</label><input id="soFor" value="${esc(o.forTags.join(', '))}" placeholder="Leave empty for general stock"></div>
         <div class="form-field"><label>Name in inventory sheet</label><input id="soInv" value="${esc(o.inventoryName)}" placeholder="Same as color name">
           <span class="dv-hint">Only if the sheet calls it something else</span></div>
-        <div class="form-field full"><label>Availability</label><select id="soAvail">${opts(AVAILABILITY, o.availability, 'Not set')}</select></div>
+        <div class="form-field full"><label>Availability</label><select id="soAvail" ${LA('availability','availability option')}>${LO('availability', AVAILABILITY, o.availability, 'Not set')}</select></div>
         ${TEST_FIELDS.map(f=>`<div class="form-field so-test"><label>${f.label}</label><input data-test="${f.k}" value="${esc(o[f.k])}"></div>`).join('')}
         <div class="form-field full"><label>Photos link (e.g. Dropbox)</label><input id="soPhotos" value="${esc(o.photosUrl)}" placeholder="https://"></div>
         <div class="form-field full"><label>Notes</label><textarea id="soNotes" rows="2">${esc(o.notes)}</textarea></div>
