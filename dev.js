@@ -382,7 +382,7 @@
     if(!ui.stages.has(filterKey(c)) && !(ui.stages.has('final') && isApproved(c))) return false;
     const q = ui.q.trim().toLowerCase();
     if(!q) return true;
-    return [c.name, c.pantone, c.partner, c.material, c.finish, c.texture, c.notes, c.jobType, ...c.forTags, ...c.bases]
+    return [c.name, c.pantone, c.partner, c.material, c.finish, c.texture, c.notes, c.jobType, c.color, ...c.forTags, ...c.bases]
       .some(v => (v||'').toLowerCase().includes(q));
   }
   function groups(){
@@ -615,7 +615,7 @@
       <td class="dt-color"><div class="dt-color-in">
         <span class="dv-check-sp"></span>
         <span class="dt-swatch dt-jobswatch" data-act="edit" data-c="${c.id}" ${isHex(c.hex) ? `style="background:${esc(c.hex)}"` : ''} title="Edit job"></span>
-        <span class="dt-name" data-act="edit" data-c="${c.id}" title="Edit job"><b>${esc(c.name||'Untitled job')}</b><span class="dv-code">Partner job</span></span>
+        <span class="dt-name" data-act="edit" data-c="${c.id}" title="Edit job"><b>${esc(c.name||'Untitled job')}</b><span class="dv-code">${c.color ? esc(c.color) + ' · ' : ''}Partner job</span></span>
       </div></td>
       <td>${esc(c.partner||'—')}</td>
       <td><select class="dt-jobstatus ${stCls}" data-c="${c.id}" data-f="status" data-fk="${esc(fk)}|status" ${LA('stepStatus','status')}>${LO('stepStatus', STEP_STATUSES, c.status, null)}</select></td>
@@ -864,7 +864,7 @@
     const lines = openShown(partner).map((c,i)=>{
       const t = isJob(c) ? c : latestTrialOf(c);
       const finish = [c.material, c.finish, c.texture].filter(Boolean).join(' ');
-      const what = isJob(c) ? [c.forTags.join(', '), c.name, finish, c.jobType] : [c.forTags.join(', '), c.name, finish, currentStep(c) ? stepLabel(currentStep(c)) : ''];
+      const what = isJob(c) ? [c.forTags.join(', '), c.name, c.color, finish, c.jobType] : [c.forTags.join(', '), c.name, finish, currentStep(c) ? stepLabel(currentStep(c)) : ''];
       const qty = t && Number(t.qty) ? `${Number(t.qty).toLocaleString('en-US')} ${t.unit || ''}`.trim() : '';
       const due = t ? (isJob(c) ? t.dueDate : t.end) : '';
       const dates = [due ? `due ${fmt(due)}` : '', t && t.receiveDate ? `receive by ${fmt(t.receiveDate)}` : '', c.brandTarget ? `brand target ${fmt(c.brandTarget)}` : ''].filter(Boolean).join(', ');
@@ -1197,6 +1197,19 @@
 
   // ---------- partner job pop-up ----------
   let jobEdit = null, jobIsNew = false;
+  // Colors a job can be for: our stock offerings and the colors in development.
+  // Typing a name that isn't listed is fine too (e.g. a brand's own color).
+  function colorChoices(){
+    const out = [], seen = new Set();
+    const add = (name, hex, material, finish, texture, from) => {
+      const k = String(name||'').trim().toLowerCase(); if(!k || seen.has(k)) return; seen.add(k);
+      out.push({name:String(name).trim(), hex, material:material||'', finish:finish||'', texture:texture||'', from});
+    };
+    const offers = window.stockData ? window.stockData.offers() : [];
+    offers.forEach(o=>{ const t = (o.textures||[])[0] || {}; add(o.color, o.hex, o.material, t.finish, t.texture, 'Stock offering'); });
+    liveColors().forEach(c=>add(c.name, c.hex, c.material, c.finish, c.texture, 'In development'));
+    return out.sort((a,b)=>a.name.localeCompare(b.name));
+  }
   function openJobModal(c, isNew){
     let el = document.getElementById('dvJobModal');
     if(!el){
@@ -1231,6 +1244,11 @@
       <p class="dv-hint" style="margin-top:0">For partner work that isn’t a color in development, e.g. a gloss adjustment or a panel order. A new color goes under <b>+ New color</b>.</p>
       <div class="form-grid">
         <div class="form-field full"><label>What is the job?</label><input id="djName" value="${esc(j.name)}" placeholder="e.g. Chocolate Luxe panel, Higher gloss"></div>
+        <div class="form-field full"><label>Color</label>
+          <div class="hex-row"><input type="color" id="djHexPick" value="${isHex(j.hex) ? esc(j.hex) : '#B9A58C'}" title="Swatch color">
+            <input id="djColor" list="dvJobColorList" value="${esc(j.color||'')}" placeholder="Pick from the list or type a name" autocomplete="off"></div>
+          <datalist id="dvJobColorList">${colorChoices().map(x=>`<option value="${esc(x.name)}">${esc([x.from, x.material, x.finish, x.texture].filter(Boolean).join(' · '))}</option>`).join('')}</datalist>
+          <span class="dv-hint">Lists our stock offerings and colors in development. Picking one fills in its swatch, material, finish and texture.</span></div>
         <div class="form-field"><label>Partner</label><input id="djPartner" list="dvJobPartnerList" value="${esc(j.partner)}"></div>
         <div class="form-field"><label>Project / brand</label><input id="djFor" list="dvJobForList" value="${esc(j.forTags.join(', '))}" placeholder="e.g. Dior"></div>
         <div class="form-field"><label>Job type</label><select id="djType" ${LA('job','job type')}>${LO('job', JOBS, j.jobType, 'Not set')}</select></div>
@@ -1245,13 +1263,30 @@
         <div class="form-field"><label>Brand target date</label><input id="djTarget" type="date" value="${esc(j.brandTarget)}"></div>
         <div class="form-field full"><label>Notes</label><textarea id="djNotes" rows="2">${esc(j.notes)}</textarea></div>
       </div>`;
+    // Picking a known color fills in its swatch, and any empty material / finish / texture.
+    el.querySelector('#djHexPick').addEventListener('input', e=>{ e.target.dataset.touched = '1'; });
+    el.querySelector('#djColor').addEventListener('change', e=>{
+      const hit = colorChoices().find(x=>same(x.name, e.target.value));
+      if(!hit) return;
+      e.target.value = hit.name;
+      if(isHex(hit.hex)) el.querySelector('#djHexPick').value = hit.hex;
+      [['#djMaterial', hit.material], ['#djFinish', hit.finish], ['#djTexture', hit.texture]].forEach(([id, val])=>{
+        const s = el.querySelector(id);
+        if(!val || s.value) return;
+        if(![...s.options].some(o=>o.value===val)){ const o = document.createElement('option'); o.value = o.textContent = val; s.insertBefore(o, s.querySelector('option[value="__new__"]')); }
+        s.value = val;
+      });
+    });
     el.classList.add('open');
     el.querySelector('#djName').focus();
   }
   async function saveJob(){
     const v = id => (document.getElementById(id) || {}).value || '';
     const j = jobEdit, before = byId(j.id);
-    j.name = v('djName').trim(); j.partner = v('djPartner').trim(); j.forTags = v('djFor').split(',').map(x=>x.trim()).filter(Boolean);
+    j.name = v('djName').trim(); j.color = v('djColor').trim();
+    const pick = document.getElementById('djHexPick');
+    if(j.color || isHex(j.hex) || pick.dataset.touched) j.hex = pick.value;   // no swatch until a color is chosen
+    j.partner = v('djPartner').trim(); j.forTags = v('djFor').split(',').map(x=>x.trim()).filter(Boolean);
     j.jobType = v('djType'); j.material = v('djMaterial'); j.finish = v('djFinish'); j.texture = v('djTexture');
     j.qty = v('djQty') === '' ? '' : String(Math.max(0, Number(v('djQty')) || 0)); j.unit = v('djUnit');
     j.dueDate = v('djDue'); j.receiveDate = v('djReceive'); j.brandTarget = v('djTarget'); j.notes = v('djNotes');

@@ -875,3 +875,4 @@
   .st-linked{font-size:11.5px;color:var(--saddle);font-weight:600;margin-left:auto;}
   .st-res.done{color:#3E6B3E;font-weight:600;}
   .st-date input{width:132px;}
+  #djColor{flex:1 1 auto;}

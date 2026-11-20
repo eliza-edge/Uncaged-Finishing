@@ -820,6 +820,8 @@
     root.addEventListener('change', onChange);
     root.addEventListener('input', onInput);
     window.renderStock = render;
+    // Read-only list of offerings, for picking a color on a partner job (dev.js).
+    window.stockData = { offers: () => offers.filter(o=>!o.deletedAt) };
     render();
     load();
   }
