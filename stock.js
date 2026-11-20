@@ -1,7 +1,7 @@
 /*
  * Stock Offerings tab.
  *
- * Coating colors: what Uncaged can sell. Each offering is a color in one
+ * Coating colors: what we can sell. Each offering is a color in one
  * material (Signature or Luxe) with one or more textures (Fine Grain, Pebble,
  * Nappa) and finishes (Satin, Matte). Colors approved in In Development
  * (stage "Approved – final") appear here automatically.

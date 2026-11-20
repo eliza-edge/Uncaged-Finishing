@@ -1,13 +1,16 @@
 /*
- * In Development tab (table).
+ * Partner Projects tab (table). It replaced In Development and Finishing Priorities.
  *
- * Every color in development is saved as its own record ("dev-<id>"), so two
- * teammates editing different colors never block each other. Shared lists
+ * Everything the finishing partners are working on, one numbered priority list
+ * per partner: colors in development, plus other partner jobs (a gloss
+ * adjustment, a panel order...). Each record is saved on its own ("dev-<id>"),
+ * so two teammates editing different rows never block each other. Shared lists
  * (base colors) are saved under "devSettings".
  *
- * Each color has one list of steps (color matching, trial rounds, Uncaged
- * testing, brand review, ...), edited in the Progress pop-up. Older records
- * that kept trial rounds and steps separately are merged when they load.
+ * Each color has one list of steps (color matching, trial rounds, in-house
+ * testing, brand review, ...), edited in the Progress pop-up. A trial round's
+ * quantity and dates also show in the table's "Quantity & dates" column.
+ * Older records are converted when they load; nothing is deleted.
  *
  * Client data is never written into this file: the starting data is loaded
  * with More → Import, and lives only in the team database.
@@ -30,12 +33,13 @@
   ];
   // The steps a color goes through, following the Color Development Gantt.
   const STEP_TYPES = [
-    {key:'send',        label:'Send Pantone / swatch', owner:'uncaged'},
+    {key:'send',        label:'Send Pantone / swatch', owner:'inhouse'},
     {key:'color_match', label:'Color matching',        owner:'partner'},
-    {key:'trial',       label:'Trial round',           owner:'partner', result:true, shade:true},
-    {key:'ship_in',     label:'Ship samples to Uncaged', owner:'partner'},
-    {key:'testing',     label:'Uncaged testing',       owner:'uncaged', result:true},
-    {key:'ship_brand',  label:'Ship samples to brand', owner:'uncaged'},
+    // A trial round is the partner's job: its quantity and dates are shared with Finishing Priorities.
+    {key:'trial',       label:'Trial round',           owner:'partner', result:true, shade:true, job:true},
+    {key:'ship_in',     label:'Ship samples to us',    owner:'partner'},
+    {key:'testing',     label:'In-house testing',      owner:'inhouse', result:true, tests:true},
+    {key:'ship_brand',  label:'Ship samples to brand', owner:'inhouse'},
     {key:'brand',       label:'Brand review',          owner:'brand', feedback:true},
     {key:'other',       label:'Other',                 owner:''},
   ];
@@ -58,7 +62,8 @@
     {key:'changes',    label:'Changes requested'},
   ];
   const feedbackLabel = k => (BRAND_FEEDBACK.find(f=>f.key===(k||'')) || BRAND_FEEDBACK[0]).label;
-  const RESULTS = [{key:'', label:'Pending'}, {key:'pass', label:'Passed'}, {key:'fail', label:'Failed'}];
+  const RESULTS = [{key:'', label:'Pending'}, {key:'done', label:'Complete'}, {key:'pass', label:'Passed'}, {key:'fail', label:'Failed'}];
+  const UNITS = ['A4s','panels','sq ft','meters','yards'];
   const STEP_STATUSES = ['Not started','In progress','Complete','At risk','TBD'];
   const FINISHES = ['Matte','Satin','Gloss','High gloss'];
   const MATERIALS = ['Luxe','Signature'];
@@ -107,8 +112,20 @@
   let settings = {baseColors: DEFAULT_BASES.map(n=>({name:n, active:true}))};
   let loaded = false, loadError = '';
   // The list opens on the stages being worked on now; any mix of stages can be picked.
-  const DEFAULT_STAGES = ['coating_trial','testing','failed_retrying'];
-  const ui = Object.assign({groupBy:'none', q:'', stages:new Set(DEFAULT_STAGES), sortKey:'', sortDir:1}, readPrefs());
+  // Partner jobs that aren't a color in development (a gloss adjustment, a panel order...).
+  const JOBS = ['Color match (A4s)','Panels / production','Gloss / finish adjustment','Samples','Other'];
+  const isJob = c => c.kind === 'job';
+  const jobDone = c => c.status === 'Complete';
+  const JOB_FILTERS = [
+    {key:'job',      label:'Other partner jobs', color:'#8C6A4F'},
+    {key:'job_done', label:'Completed jobs',     color:'#6E8B6E'},
+  ];
+  const FILTERS = [...STAGES, ...JOB_FILTERS];
+  const filterKey = c => isJob(c) ? (jobDone(c) ? 'job_done' : 'job') : c.stage;
+  // Open work gets a priority number in its partner's list.
+  const isOpen = c => isJob(c) ? !jobDone(c) : !['final','failed_stopped'].includes(c.stage);
+  const DEFAULT_STAGES = ['coating_trial','testing','failed_retrying','job'];
+  const ui = Object.assign({groupBy:'partner', q:'', stages:new Set(DEFAULT_STAGES), sortKey:'', sortDir:1}, readPrefs());
   const sameSet = (a, list) => a.size === list.length && list.every(x=>a.has(x));
   // Summary cards double as quick filters. "With brand" is waiting on the
   // brand, so it is not counted as active R&D.
@@ -120,11 +137,12 @@
     {key:'retry',   label:'Failed – retrying', stages:['failed_retrying']},
     {key:'hold',    label:'On hold',           stages:['on_hold']},
     {key:'final',   label:'Approved → Stock Offerings', stages:['final'], cls:'dv-passed', title:'Final approved shades'},
+    {key:'jobs',    label:'Other partner jobs', stages:['job'], title:'Partner work that isn’t a color in development'},
   ];
-  // A color can be approved for Uncaged's own stock while it is still in another
+  // A color can be approved for our own stock while it is still in another
   // stage (e.g. with a brand). "Approved – final" always counts as approved.
-  const isApproved = c => c.stage === 'final' || !!c.approvedStock;
-  CARDS.forEach(k=>{ k.test = k.key === 'final' ? isApproved : (c => k.stages.includes(c.stage)); });
+  const isApproved = c => !isJob(c) && (c.stage === 'final' || !!c.approvedStock);
+  CARDS.forEach(k=>{ k.test = k.key === 'final' ? isApproved : (c => k.stages.includes(filterKey(c))); });
   const ROOT_ID = 'dev2Root';
   const selected = new Set();
   let editing = null, editingIsNew = false;   // color details pop-up
@@ -136,12 +154,12 @@
   }
   function readPrefs(){
     try {
-      const p = JSON.parse(localStorage.getItem('uncaged-dev-prefs') || '{}');
-      return {groupBy: ['base','partner','none'].includes(p.groupBy) ? p.groupBy : 'none'};
+      const p = JSON.parse(localStorage.getItem('partner-projects-prefs') || '{}');
+      return {groupBy: ['base','partner','none'].includes(p.groupBy) ? p.groupBy : 'partner'};
     } catch(e){ return {}; }
   }
   function writePrefs(){
-    try { localStorage.setItem('uncaged-dev-prefs', JSON.stringify({groupBy:ui.groupBy})); } catch(e){}
+    try { localStorage.setItem('partner-projects-prefs', JSON.stringify({groupBy:ui.groupBy})); } catch(e){}
   }
   function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
   function pd(s){ if(!s) return null; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? null : d; }
@@ -158,10 +176,15 @@
   }
   const isHex = h => /^#[0-9a-f]{6}$/i.test(h||'');
   function live(){ return colors.filter(c=>!c.deletedAt); }
+  function liveColors(){ return live().filter(c=>!isJob(c)); }
+  const nextRank = () => Math.max(0, ...colors.map(c=>Number(c.rank)||0)) + 1;
+  // Priority order: open work by rank, then everything else.
+  const byPriority = (a, b) => (isOpen(a) ? 0 : 1) - (isOpen(b) ? 0 : 1) || (Number(a.rank)||1e15) - (Number(b.rank)||1e15) || (a.order||0) - (b.order||0);
+  const stageLabel = c => isJob(c) ? 'Partner job – ' + (c.status || 'Not started') : stageDef(c.stage).label;
   function byId(id){ return colors.find(c=>c.id===id); }
   function blankStep(type, extra){
-    const s = {id:uid(), phase:'rd', type, round:1, activity:typeDef(type).label, owner:'', start:'', end:'', status:'Not started',
-      result:'', brandFeedback:'', brandNote:'', hex:'', notes:''};
+    const s = {id:uid(), phase:'rd', type, round:1, activity:'', owner:'', start:'', end:'', status:'Not started',
+      result:'', brandFeedback:'', brandNote:'', hex:'', notes:'', qty:'', unit:'', receiveDate:''};
     TEST_FIELDS.forEach(f=>{ s[f.k] = ''; });
     return Object.assign(s, extra || {});
   }
@@ -170,7 +193,7 @@
     if(/color match/.test(t)) return 'color_match';
     if(/test/.test(t)) return 'testing';
     if(/send pantone|swatch to/.test(t)) return 'send';
-    if(/(ship|send|receives).*(to uncaged|uncaged office)|receives samples/.test(t)) return 'ship_in';
+    if(/(ship|send|receives).*(to uncaged|uncaged office|to us\b)|receives samples/.test(t)) return 'ship_in';
     if(/approval|approve/.test(t)) return 'brand';
     if(/ship .*(samples|a4s?) to|ship a4s/.test(t)) return 'ship_brand';
     return 'other';
@@ -185,14 +208,14 @@
     let finalId = '';
     (Array.isArray(c.trials) ? c.trials : []).forEach(t=>{
       const n = Number(t.n) || 1;
-      const trial = blankStep('trial', {round:n, activity:'Trial round', owner:t.partner||c.partner||'', start:t.start||'', end:t.end||'',
+      const trial = blankStep('trial', {round:n, activity:'', owner:t.partner||c.partner||'', start:t.start||'', end:t.end||'',
         status: t.result || (pd(t.end) && pd(t.end) < today()) ? 'Complete' : (t.start ? 'In progress' : 'Not started'),
         result:t.result||'', hex:t.hex||'', notes:t.notes||''});
       TEST_FIELDS.forEach(f=>{ trial[f.k] = t[f.k] || ''; });
       rd.push(trial);
       if(String(c.finalTrial) === String(t.n)) finalId = trial.id;
       if(t.brandFeedback){
-        rd.push(blankStep('brand', {round:n, activity:'Brand review', owner:c.forTags[0]||'Brand', start:'', end:'', _last:true,
+        rd.push(blankStep('brand', {round:n, activity:'', owner:c.forTags[0]||'Brand', start:'', end:'', _last:true,
           status: t.brandFeedback==='with_brand' ? 'In progress' : 'Complete', brandFeedback:t.brandFeedback, brandNote:t.brandNote||''}));
       }
     });
@@ -213,10 +236,35 @@
   function normalize(c){
     c.forTags = Array.isArray(c.forTags) ? c.forTags : [];
     c.bases = Array.isArray(c.bases) ? c.bases : [];
+    if(isJob(c)){
+      c.steps = []; c.v = 2; c.stage = 'job'; c.status = c.status || 'Not started';
+      if(typeof c.order !== 'number') c.order = Date.now();
+      return c;
+    }
     if(c.v !== 2) migrate(c);
-    c.steps.forEach(s=>{ if(!s.id) s.id = uid(); if(!s.phase) s.phase = phaseOf(s); if(!s.type) s.type = guessType(s.activity); });
+    c.steps.forEach(s=>{
+      if(!s.id) s.id = uid(); if(!s.phase) s.phase = phaseOf(s); if(!s.type) s.type = guessType(s.activity);
+      if(s.owner === 'Uncaged') s.owner = 'In-house';
+      // A description that only repeats the step name (including the old names) is dropped.
+      if(s.activity && [typeDef(s.type).label, 'Uncaged testing', 'Ship samples to Uncaged'].some(l=>same(s.activity, l))) s.activity = '';
+    });
+    renumber(c);
     if(typeof c.order !== 'number') c.order = Date.now();
     return c;
+  }
+  const same = (a, b) => String(a||'').trim().toLowerCase() === String(b||'').trim().toLowerCase();
+  const stepLabel = s => typeDef(s.type).label;
+  // Rounds are worked out, not typed: each Trial round starts the next round, and
+  // steps before the first trial round belong to round 1.
+  function renumber(c){
+    let n = 0;
+    rdSteps(c).forEach(s=>{ if(s.type === 'trial') n++; s.round = Math.max(n, 1); });
+  }
+  function latestTrialOf(c){ return rdSteps(c).filter(s=>s.type==='trial').pop() || null; }
+  function newTrial(c){
+    const s = blankStep('trial', {owner:c.partner||'', unit:'A4s'});
+    addStepTo(c, s); renumber(c);
+    return s;
   }
   function maxRound(c){ return rdSteps(c).reduce((m,s)=>Math.max(m, Number(s.round)||0), 0); }
   function trialCount(c){ return rdSteps(c).filter(s=>s.type==='trial').length; }
@@ -238,7 +286,7 @@
     return [...set].sort((a,b)=>a.localeCompare(b));
   }
   function allOwners(){
-    const set = new Set(['Pearl','Bader','Uncaged']);
+    const set = new Set(['Pearl','Bader','In-house']);
     live().forEach(c=>{ c.steps.forEach(s=>s.owner && set.add(s.owner)); c.forTags.forEach(t=>set.add(t)); c.partner && set.add(c.partner); });
     return [...set].sort((a,b)=>a.localeCompare(b));
   }
@@ -249,9 +297,8 @@
   }
   function ownerFor(type, c){
     const o = typeDef(type).owner;
-    return o === 'partner' ? (c.partner||'') : o === 'uncaged' ? 'Uncaged' : o === 'brand' ? (c.forTags[0]||'Brand') : '';
+    return o === 'partner' ? (c.partner||'') : o === 'inhouse' ? 'In-house' : o === 'brand' ? (c.forTags[0]||'Brand') : '';
   }
-  function hasPrio(c){ return !!(window.prioData && window.prioData.has(c.id)); }
 
   // ---------- storage ----------
   async function load(){
@@ -264,12 +311,64 @@
       const {keys} = await window.storage.list(PREFIX);
       const recs = await Promise.all(keys.map(k => window.storage.get(k).then(r=>JSON.parse(r.value)).catch(()=>null)));
       colors = recs.filter(Boolean).map(normalize);
+      await movePriorities();
+      await fillRanks();
       loaded = true;
     } catch(e){
       loadError = 'Couldn’t load colors in development (' + (e.message||e) + '). Reload to try again.';
       console.error(e);
     }
     render();
+  }
+  // The old Finishing Priorities tab kept its rows as "prio-<id>". Each one is
+  // moved here once: a row for a color sets its priority and fills its trial
+  // round's quantity / dates (empty fields only); a hand-entered row becomes a
+  // partner job. The old rows are kept, marked as moved.
+  async function movePriorities(){
+    let recs = [];
+    try {
+      const {keys} = await window.storage.list('prio-');
+      recs = (await Promise.all(keys.map(k => window.storage.get(k).then(r=>JSON.parse(r.value)).catch(()=>null)))).filter(Boolean);
+    } catch(e){ return; }
+    const todo = recs.filter(r=>!r.movedAt && !r.deletedAt).sort((a,b)=>(a.rank||0)-(b.rank||0));
+    for(const r of todo){
+      try {
+        if(r.devId){
+          const c = byId(r.devId);
+          if(c && !c.deletedAt && !isJob(c)){
+            if(!c.rank && r.rank) c.rank = r.rank;
+            let t = latestTrialOf(c);
+            if(!t && (r.quantity || r.receiveDate)) t = newTrial(c);
+            if(t){
+              if(!t.qty && r.quantity) t.qty = String(r.quantity);
+              if(r.unit && (!t.unit || !t.qty)) t.unit = r.unit;
+              if(!t.receiveDate && r.receiveDate) t.receiveDate = r.receiveDate;
+              if(r.notes && !String(t.notes||'').includes(r.notes)) t.notes = [t.notes, r.notes].filter(Boolean).join(' · ');
+              if(r.done && t.status !== 'Complete'){ t.status = 'Complete'; t.doneAt = r.doneAt || iso(new Date()); }
+            }
+            if(!c.brandTarget && r.targetDate) c.brandTarget = r.targetDate;
+            await save(c);
+          }
+        } else if(!byId('job' + r.id)){
+          const j = normalize({kind:'job', id:'job' + r.id, name: r.color || r.job || r.project || 'Partner job', hex: r.hex || '',
+            jobType: r.job || '', partner: r.partner || '', forTags: r.project ? [r.project] : [],
+            material: r.material || '', finish: r.finish || '', texture: r.texture || '',
+            qty: r.quantity ? String(r.quantity) : '', unit: r.unit || 'A4s', dueDate: '', receiveDate: r.receiveDate || '',
+            brandTarget: r.targetDate || '', status: r.done ? 'Complete' : 'Not started', doneAt: r.doneAt || '',
+            notes: r.notes || '', rank: r.rank || 0, order: Date.now()});
+          await save(j); colors.push(j);
+        }
+        r.movedAt = new Date().toISOString();
+        await window.storage.set('prio-' + r.id, JSON.stringify(r));
+      } catch(e){ console.error('Moving a priority failed', e); }
+    }
+  }
+  // Open work without a priority yet goes to the bottom of its partner's list.
+  async function fillRanks(){
+    const need = live().filter(c=>isOpen(c) && !c.rank).sort((a,b)=>(a.order||0)-(b.order||0));
+    let n = nextRank();
+    need.forEach(c=>{ c.rank = n++; });
+    await Promise.all(need.map(c=>save(c).catch(e=>console.error(e))));
   }
   async function save(c){
     c.updatedAt = new Date().toISOString();
@@ -280,14 +379,14 @@
 
   // ---------- filtering, grouping, sorting ----------
   function matches(c){
-    if(!ui.stages.has(c.stage) && !(ui.stages.has('final') && isApproved(c))) return false;
+    if(!ui.stages.has(filterKey(c)) && !(ui.stages.has('final') && isApproved(c))) return false;
     const q = ui.q.trim().toLowerCase();
     if(!q) return true;
-    return [c.name, c.pantone, c.partner, c.material, c.finish, c.texture, c.notes, ...c.forTags, ...c.bases]
+    return [c.name, c.pantone, c.partner, c.material, c.finish, c.texture, c.notes, c.jobType, ...c.forTags, ...c.bases]
       .some(v => (v||'').toLowerCase().includes(q));
   }
   function groups(){
-    const list = live().filter(matches).sort((a,b)=>a.order-b.order);
+    const list = live().filter(matches).sort(byPriority);
     if(ui.groupBy === 'none') return [['', list]];
     const map = new Map();
     const NONE = ui.groupBy === 'base' ? 'No base set' : 'No partner set';
@@ -299,21 +398,20 @@
     const order = settings.baseColors.map(x=>x.name);
     return [...map.entries()].sort((a,b)=>{
       if((a[0]===NONE) !== (b[0]===NONE)) return a[0]===NONE ? 1 : -1;
-      return ui.groupBy==='base' ? (order.indexOf(a[0])+1||99) - (order.indexOf(b[0])+1||99) : a[0].localeCompare(b[0]);
+      if(ui.groupBy==='base') return (order.indexOf(a[0])+1||99) - (order.indexOf(b[0])+1||99);
+      return b[1].filter(isOpen).length - a[1].filter(isOpen).length || a[0].localeCompare(b[0]);
     });
   }
-  const RESULT_ORDER = {pass:0, '':1, fail:2};
   function sortValue(c, key){
     switch(key){
       case 'color':    return (c.name||'').toLowerCase();
       case 'partner':  return (c.partner||'').toLowerCase();
-      case 'stage':    return STAGES.findIndex(x=>x.key===c.stage);
       case 'project':  return (c.forTags[0]||'').toLowerCase();
       case 'base':     return [c.bases.join(' + '), c.texture].filter(Boolean).join(' ').toLowerCase();
-      case 'progress': { const s = currentStep(c); return s ? String(maxRound(c)).padStart(3,'0') + String(STEP_TYPES.findIndex(t=>t.key===s.type)).padStart(2,'0') : ''; }
-      case 'testing':  { const r = latestResult(c); return r ? RESULT_ORDER[r.result||''] : ''; }
+      case 'stage':    return isJob(c) ? 100 + STEP_STATUSES.indexOf(c.status) : STAGES.findIndex(x=>x.key===c.stage);
+      case 'progress': { if(isJob(c)) return (c.jobType||'').toLowerCase(); const s = currentStep(c); return s ? String(maxRound(c)).padStart(3,'0') + String(STEP_TYPES.findIndex(t=>t.key===s.type)).padStart(2,'0') : ''; }
+      case 'job':      { const t = isJob(c) ? c : latestTrialOf(c); return (t && t.receiveDate) || ''; }
       case 'forecast': return c.forecastQuarter ? c.forecastQuarter + ' ' + String(Number(c.forecastSqft)||0).padStart(9,'0') : (Number(c.forecastSqft) ? '~' + String(Number(c.forecastSqft)).padStart(9,'0') : '');
-      case 'prio':     return hasPrio(c) ? 0 : 1;
     }
     return '';
   }
@@ -325,7 +423,7 @@
       if(ex !== ey) return ex ? 1 : -1;
       if(x < y) return -ui.sortDir;
       if(x > y) return ui.sortDir;
-      return (a.order||0) - (b.order||0);
+      return byPriority(a, b);
     });
   }
 
@@ -335,13 +433,13 @@
     if(!root) return;
     const focusKey = document.activeElement && root.contains(document.activeElement) ? document.activeElement.dataset.fk : null;
     if(loadError){ root.innerHTML = `<div class="dv-empty">${esc(loadError)}</div>`; return; }
-    if(!loaded){ root.innerHTML = `<div class="dv-empty">Loading colors in development…</div>`; return; }
+    if(!loaded){ root.innerHTML = `<div class="dv-empty">Loading partner projects…</div>`; return; }
     const gs = groups();
     root.innerHTML = `
       ${summaryHTML()}
       <div class="dv-toolbar">
         <div class="dv-tools-left">
-          <input type="search" class="dv-search" placeholder="Search colors, projects, Pantone…" value="${esc(ui.q)}" data-act="search" data-fk="search">
+          <input type="search" class="dv-search" placeholder="Search colors, jobs, projects, Pantone…" value="${esc(ui.q)}" data-act="search" data-fk="search">
           <label class="dv-inline">Group by
             <select data-act="groupBy">
               ${[['none','No grouping'],['base','Base color'],['partner','Partner']].map(([k,l])=>`<option value="${k}" ${ui.groupBy===k?'selected':''}>${l}</option>`).join('')}
@@ -359,6 +457,7 @@
               <button data-act="trash">Recently deleted (${colors.filter(c=>c.deletedAt).length})</button>
             </div>
           </div>
+          <button class="btn secondary" data-act="newJob" title="Partner work that isn't a color in development, e.g. a gloss adjustment or a panel order">+ New partner job</button>
           <button class="btn" data-act="new">+ New color</button>
         </div>
       </div>
@@ -372,7 +471,7 @@
     const all = root.querySelector('[data-act=selectAll]');
     if(all){ const vis = visibleIds(); all.indeterminate = vis.some(id=>selected.has(id)) && !vis.every(id=>selected.has(id)); }
   }
-  function visibleIds(){ return [...new Set(groups().flatMap(([,l])=>l.map(c=>c.id)))]; }
+  function visibleIds(){ return [...new Set(groups().flatMap(([,l])=>l.filter(c=>!isJob(c)).map(c=>c.id)))]; }
 
   function summaryHTML(){
     const L = live();
@@ -385,10 +484,10 @@
   }
   // Stage filter: tick any mix of stages. Opens on the default set.
   function stageChipsHTML(){
-    const L = live(), isDefault = sameSet(ui.stages, DEFAULT_STAGES), isAll = ui.stages.size === STAGES.length;
+    const L = live(), isDefault = sameSet(ui.stages, DEFAULT_STAGES), isAll = ui.stages.size === FILTERS.length;
     return `<div class="dv-stagechips" role="group" aria-label="Show stages">
       <span class="dv-stagechips-lbl">Show stages</span>
-      ${STAGES.map(s=>{ const on = ui.stages.has(s.key), n = L.filter(c=> s.key === 'final' ? isApproved(c) : c.stage===s.key).length;
+      ${FILTERS.map(s=>{ const on = ui.stages.has(s.key), n = L.filter(c=> s.key === 'final' ? isApproved(c) : filterKey(c)===s.key).length;
         return `<button type="button" class="dv-chip ${on?'on':''}" data-act="stageChip" data-k="${s.key}" aria-pressed="${on}" style="--chip:${s.color}">
           <span class="dv-chip-dot"></span>${esc(s.label)} <span class="dv-chip-n">${n}</span></button>`; }).join('')}
       <span class="dv-stagechips-btns">
@@ -398,37 +497,52 @@
     </div>`;
   }
   function emptyHTML(){
-    return `<div class="dv-empty"><p><b>No colors in development yet.</b></p>
-      <p>Add one with <b>+ New color</b>, or load the starting data with <b>More → Import from file…</b></p></div>`;
+    return `<div class="dv-empty"><p><b>No partner projects yet.</b></p>
+      <p>Add one with <b>+ New color</b> or <b>+ New partner job</b>, or load the starting data with <b>More → Import from file…</b></p></div>`;
   }
 
-  const RESULT_PILL = {pass:['Passed','ok'], fail:['Failed','bad'], '':['Pending','wait']};
+  const RESULT_PILL = {pass:['Passed','ok'], done:['Complete','ok'], fail:['Failed','bad'], '':['Pending','wait']};
   function testBits(t){ return TEST_FIELDS.filter(f=>t && t[f.k]!=='' && t[f.k]!=null).slice(0,3).map(f=>`${f.label} ${esc(t[f.k])}`).join(' · '); }
 
+  // Each partner's open work is numbered 1, 2, 3... in priority order, among the rows shown.
+  function numbers(gs){
+    const seen = new Set(), byPartner = new Map(), out = new Map();
+    gs.forEach(([,l])=>l.forEach(c=>{ if(seen.has(c.id) || !isOpen(c)) return; seen.add(c.id);
+      const p = c.partner || ''; if(!byPartner.has(p)) byPartner.set(p, []); byPartner.get(p).push(c); }));
+    byPartner.forEach(l=>l.sort(byPriority).forEach((c,i)=>out.set(c.id, i+1)));
+    return out;
+  }
   function tableHTML(gs){
-    const cols = [['color','Color'],['partner','Partner'],['stage','Stage'],['project','Project'],['base','Base &amp; texture'],
-      ['progress','Progress'],['testing','Testing'],['forecast','Forecasted order'],['prio','Priorities'],['','']];
+    const cols = [['','#'],['color','Color / job'],['partner','Partner'],['stage','Stage'],['project','Project'],['base','Base &amp; texture'],
+      ['progress','Progress'],['job','Quantity &amp; dates'],['forecast','Forecasted order'],['','']];
     const vis = visibleIds();
     const allOn = vis.length && vis.every(id=>selected.has(id));
-    const head = cols.map(([k,h],i)=>{
-      if(!k) return '<th></th>';
+    const head = cols.map(([k,h])=>{
+      if(!k) return h ? `<th class="dt-rankh" title="Priority in each partner's list">${h}</th>` : '<th></th>';
       const sortBtn = `<span class="dt-sort-lbl" data-act="sort" data-k="${k}">${h}<span class="dt-arrow">${ui.sortKey===k ? (ui.sortDir===1?'▲':'▼') : '↕'}</span></span>`;
       return `<th class="dt-sort ${ui.sortKey===k?'on':''}" aria-sort="${ui.sortKey===k ? (ui.sortDir===1?'ascending':'descending') : 'none'}" title="Sort by ${h}">
-        ${i===0 ? `<input type="checkbox" class="dv-check" data-act="selectAll" ${allOn?'checked':''} title="Select all shown">` : ''}${sortBtn}</th>`;
+        ${k==='color' ? `<input type="checkbox" class="dv-check" data-act="selectAll" ${allOn?'checked':''} title="Select all colors shown">` : ''}${sortBtn}</th>`;
     }).join('');
-    const body = gs.map(([name, list])=>`
-      ${name ? `<tr class="dt-group"><td colspan="${cols.length}">${esc(name)} <span class="dv-count">${list.length}</span></td></tr>` : ''}
-      ${sortRows(list).map(c=>rowHTML(c, name)).join('')}`).join('');
-    return `${forecastHTML()}<div class="dt-wrap"><table class="dt">
+    const nums = numbers(gs);
+    const movable = ui.groupBy === 'partner' && !ui.sortKey;
+    const body = gs.map(([name, list])=>{
+      const partner = list[0] ? (list[0].partner || '') : '';
+      const copy = ui.groupBy === 'partner' && partner && list.some(isOpen);
+      return `${name ? `<tr class="dt-group"><td colspan="${cols.length}">${esc(name)} <span class="dv-count">${list.length}</span>
+          ${copy ? `<button class="linkish dt-copy" data-act="copy" data-p="${esc(partner)}" title="Copy ${esc(partner)}'s numbered list to paste into an email or message">Copy ${esc(partner)}'s list</button>` : ''}</td></tr>` : ''}
+      ${sortRows(list).map(c=>rowHTML(c, name, nums.get(c.id), movable && isOpen(c))).join('')}`; }).join('');
+    return `${forecastHTML()}
+      ${movable ? '' : `<p class="dv-hint dt-orderhint">To change a partner's priority order, group by <b>Partner</b>${ui.sortKey ? ' and turn off column sorting' : ''}.</p>`}
+      <div class="dt-wrap"><table class="dt">
       <thead><tr>${head}</tr></thead>
-      <tbody>${list0(gs) ? body : `<tr><td colspan="${cols.length}" class="dv-muted" style="padding:16px">No colors in the stages you’ve picked. Tick more stages under <b>Show stages</b>, or choose <b>All stages</b>.</td></tr>`}</tbody>
+      <tbody>${list0(gs) ? body : `<tr><td colspan="${cols.length}" class="dv-muted" style="padding:16px">Nothing in the stages you’ve picked. Tick more under <b>Show stages</b>, or choose <b>All stages</b>.</td></tr>`}</tbody>
     </table></div>`;
   }
   const list0 = gs => gs.some(([,l])=>l.length);
 
   // Forecasted base material needs: forecast sq ft totalled by base, material and texture, per quarter.
   function forecastHTML(){
-    const list = live().filter(c=>c.stage!=='failed_stopped' && Number(c.forecastSqft) > 0);
+    const list = liveColors().filter(c=>c.stage!=='failed_stopped' && Number(c.forecastSqft) > 0);
     if(!list.length) return `<div class="dt-fcbox empty">Add a <b>forecasted order</b> (sq ft and quarter) to a color, and the base material it will need is totalled here by base, material and texture.</div>`;
     const rows = new Map(), quarters = new Set();
     list.forEach(c=>{
@@ -464,21 +578,62 @@
     const stCls = cur.status==='Complete' ? 'ok' : cur.status==='At risk' ? 'bad' : cur.status==='In progress' ? 'wait' : 'none';
     return `<button class="dt-prog" data-act="steps" data-c="${c.id}" title="Open all ${st.length} steps">
       <span class="dt-prog-round">Round ${cur.round || 1}${maxRound(c) > (cur.round||1) ? ` <span class="dv-muted">of ${maxRound(c)}</span>` : ''}</span>
-      <span class="dt-prog-step">${esc(cur.activity || typeDef(cur.type).label)}</span>
+      <span class="dt-prog-step">${esc(stepLabel(cur))}${cur.activity ? `<span class="dt-prog-detail">${esc(cur.activity)}</span>` : ''}</span>
       <span class="dt-prog-meta"><span class="dt-pill ${stCls}">${esc(cur.status)}</span>
         ${cur.start||cur.end ? `<span class="${late?'dt-late':'dv-muted'}">${esc(fmt(cur.start)||'?')} – ${esc(fmt(cur.end)||'…')}</span>` : ''}</span>
       <span class="dt-prog-count">${st.length} step${st.length===1?'':'s'} · open</span>
     </button>`;
   }
 
-  function rowHTML(c, gname){
-    const st = stageDef(c.stage);
-    const r = latestResult(c);
-    const fails = resultSteps(c).filter(s=>s.result==='fail' && s!==r).length;
-    const res = r ? RESULT_PILL[r.result||''] : null;
+  function rankCell(c, num, movable){
+    if(!num) return `<td class="dt-rank"><span class="dv-muted" title="${isJob(c) ? 'Done' : 'Approved or stopped'}, so not numbered">–</span></td>`;
+    return `<td class="dt-rank">${movable ? `<span class="dt-handle" title="Drag to reorder">⠿</span>` : ''}<b title="${esc((c.partner||'No partner')+'’s priority #'+num)}">${num}</b>
+      ${movable ? `<span class="dt-move"><button class="icon-btn" data-act="up" data-c="${c.id}" title="Move up">↑</button><button class="icon-btn" data-act="down" data-c="${c.id}" title="Move down">↓</button></span>` : ''}</td>`;
+  }
+  // Quantity and dates: a color's come from its latest trial round (the partner's
+  // job), so they are the same here and in the Progress pop-up.
+  function jobCell(c, fk){
+    const t = isJob(c) ? c : latestTrialOf(c);
+    const done = isJob(c) ? jobDone(c) : !!(t && t.status === 'Complete');
+    const due = t ? (isJob(c) ? t.dueDate : t.end) : '', rcv = t ? t.receiveDate : '';
+    const late = d => d && pd(d) < today() && !done ? 'late' : '';
+    const tip = isJob(c) ? '' : (t ? `From trial round ${t.round}` : 'Fills in a new trial round');
+    return `<td class="dt-job" title="${esc(tip)}">
+      <div class="dt-job-qty"><input type="number" min="0" step="1" placeholder="Qty" value="${esc(t ? t.qty : '')}" data-c="${c.id}" data-f="jobQty" data-fk="${esc(fk)}|jq">
+        <select data-c="${c.id}" data-f="jobUnit" data-fk="${esc(fk)}|ju" ${LA('unit','unit')}>${LO('unit', UNITS, (t && t.unit) || 'A4s', null)}</select></div>
+      <label class="dt-job-date ${late(due)}">Due<input type="date" value="${esc(due||'')}" data-c="${c.id}" data-f="jobDue" data-fk="${esc(fk)}|jd"></label>
+      <label class="dt-job-date ${late(rcv)}">Receive by<input type="date" value="${esc(rcv||'')}" data-c="${c.id}" data-f="jobReceive" data-fk="${esc(fk)}|jr"></label>
+      <label class="dt-job-date">Brand target<input type="date" value="${esc(c.brandTarget||'')}" data-c="${c.id}" data-f="brandTarget" data-fk="${esc(fk)}|bt"></label>
+    </td>`;
+  }
+  function jobRowHTML(c, gname, num, movable){
     const fk = `${gname}|${c.id}`;
-    const prio = hasPrio(c);
-    return `<tr class="dt-row ${selected.has(c.id)?'is-selected':''}">
+    const stCls = 'st-' + String(c.status||'').replace(/\s+/g,'-').toLowerCase();
+    const what = [c.material, c.finish, c.texture].filter(Boolean).join(' · ');
+    return `<tr class="dt-row dt-jobrow ${jobDone(c)?'is-done':''}" data-id="${c.id}">
+      ${rankCell(c, num, movable)}
+      <td class="dt-color"><div class="dt-color-in">
+        <span class="dv-check-sp"></span>
+        <span class="dt-swatch dt-jobswatch" data-act="edit" data-c="${c.id}" ${isHex(c.hex) ? `style="background:${esc(c.hex)}"` : ''} title="Edit job"></span>
+        <span class="dt-name" data-act="edit" data-c="${c.id}" title="Edit job"><b>${esc(c.name||'Untitled job')}</b><span class="dv-code">Partner job</span></span>
+      </div></td>
+      <td>${esc(c.partner||'—')}</td>
+      <td><select class="dt-jobstatus ${stCls}" data-c="${c.id}" data-f="status" data-fk="${esc(fk)}|status" ${LA('stepStatus','status')}>${LO('stepStatus', STEP_STATUSES, c.status, null)}</select></td>
+      <td>${c.forTags.length ? c.forTags.map(x=>`<span class="dv-tag">${esc(x)}</span>`).join(' ') : '<span class="dv-muted">—</span>'}</td>
+      <td>${what ? esc(what) : '<span class="dv-muted">—</span>'}</td>
+      <td><select class="dt-jobtype ${c.jobType ? '' : 'unset'}" data-c="${c.id}" data-f="jobType" data-fk="${esc(fk)}|jt" ${LA('job','job type')}>${LO('job', JOBS, c.jobType, 'Job type?')}</select>
+        ${c.notes ? `<div class="dv-muted dt-jobnote">${esc(c.notes)}</div>` : ''}</td>
+      ${jobCell(c, fk)}
+      <td><span class="dv-muted">—</span></td>
+      <td><button class="icon-btn" data-act="edit" data-c="${c.id}" title="Edit job">✎</button></td>
+    </tr>`;
+  }
+  function rowHTML(c, gname, num, movable){
+    if(isJob(c)) return jobRowHTML(c, gname, num, movable);
+    const st = stageDef(c.stage);
+    const fk = `${gname}|${c.id}`;
+    return `<tr class="dt-row ${selected.has(c.id)?'is-selected':''}" data-id="${c.id}">
+      ${rankCell(c, num, movable)}
       <td class="dt-color"><div class="dt-color-in">
         <input type="checkbox" class="dv-check" data-act="select" data-c="${c.id}" ${selected.has(c.id)?'checked':''} title="Select to update together">
         <span class="dt-swatch" data-act="edit" data-c="${c.id}" style="background:${esc(c.hex||'#ddd')}" title="Edit color details"></span>
@@ -487,7 +642,7 @@
       <td>${esc(c.partner||'—')}</td>
       <td><select class="dv-stage" data-c="${c.id}" data-f="stage" data-fk="${esc(fk)}|stage" style="background:${st.color};color:${contrast(st.color)}">
         ${STAGES.map(x=>`<option value="${x.key}" ${c.stage===x.key?'selected':''}>${esc(x.label)}</option>`).join('')}</select>
-        <label class="dt-stockflag ${isApproved(c)?'on':''}" title="${c.stage==='final' ? 'Approved – final always counts as approved for our stock' : 'Also approved for Uncaged stock: it shows on Stock Offerings while it stays in this stage'}">
+        <label class="dt-stockflag ${isApproved(c)?'on':''}" title="${c.stage==='final' ? 'Approved – final always counts as approved for our stock' : 'Also approved for our stock: it shows on Stock Offerings while it stays in this stage'}">
           <input type="checkbox" data-c="${c.id}" data-f="approvedStock" ${isApproved(c)?'checked':''} ${c.stage==='final'?'disabled':''}> Approved for our stock</label></td>
       <td>${c.forTags.length ? c.forTags.map(x=>`<span class="dv-tag">${esc(x)}</span>`).join(' ') : '<span class="dv-muted">—</span>'}</td>
       <td>${c.bases.length ? `<b class="dt-base">${esc(c.bases.join(' + '))}</b>` : '<span class="dv-muted">Base not set</span>'}
@@ -496,14 +651,12 @@
         </select></div>
         ${[c.material, c.finish].filter(Boolean).length ? `<div class="dv-muted">${esc([c.material, c.finish].filter(Boolean).join(' · '))}</div>` : ''}</td>
       <td class="dt-progcell">${progressHTML(c)}</td>
-      <td>${res ? `<span class="dt-pill ${res[1]}">${res[0]}</span>${fails ? `<div class="dv-muted">${fails} earlier fail${fails===1?'':'s'}</div>` : ''}${testBits(r) ? `<div class="dv-muted">${testBits(r)}</div>` : ''}` : '<span class="dv-muted">—</span>'}</td>
+      ${jobCell(c, fk)}
       <td class="dt-fc">
         <div class="dt-fc-row"><input type="number" min="0" step="10" inputmode="numeric" placeholder="—" value="${esc(c.forecastSqft||'')}" data-c="${c.id}" data-f="forecastSqft" data-fk="${esc(fk)}|fsq" title="Forecasted order, sq ft"><span class="dv-muted">sq ft</span></div>
         <select data-c="${c.id}" data-f="forecastQuarter" data-fk="${esc(fk)}|fq" title="Quarter of the forecasted order" class="${c.forecastQuarter ? '' : 'unset'}">
           <option value="">Quarter?</option>${quarterOptions(c.forecastQuarter).map(q=>`<option ${c.forecastQuarter===q?'selected':''}>${q}</option>`).join('')}
         </select></td>
-      <td class="dt-prio"><label class="dt-prio-lbl ${prio?'on':''}" title="${prio ? 'On Finishing Priorities. Untick to remove it' : 'Send this color to Finishing Priorities'}">
-        <input type="checkbox" data-act="prio" data-c="${c.id}" data-fk="${esc(fk)}|prio" ${prio?'checked':''} ${window.prioData ? '' : 'disabled'}>${prio ? 'On list' : 'Add'}</label></td>
       <td><button class="icon-btn" data-act="edit" data-c="${c.id}" title="Edit color details">✎</button></td>
     </tr>`;
   }
@@ -522,7 +675,6 @@
           <select id="dvBulkQuarter" title="Forecast quarter"><option value="">Forecast quarter…</option>${quarterOptions().map(q=>`<option>${q}</option>`).join('')}</select>
           <button class="btn" data-act="bulkSet">Apply</button>
         </span>
-        <button class="btn secondary" data-act="bulkPrio">Send to Priorities</button>
         <button class="btn secondary" data-act="clearSel">Clear selection</button>
       </div>
       <div class="dv-bulk-line">
@@ -550,13 +702,27 @@
     if(act === 'groupBy'){ ui.groupBy = el.value; writePrefs(); return render(); }
     if(act === 'select'){ el.checked ? selected.add(el.dataset.c) : selected.delete(el.dataset.c); return render(); }
     if(act === 'selectAll'){ visibleIds().forEach(id=> el.checked ? selected.add(id) : selected.delete(id)); return render(); }
-    if(act === 'prio'){
-      const c = byId(el.dataset.c);
-      if(c && window.prioData) window.prioData.toggle(c.id, el.checked).then(()=>{ render(); toast(el.checked ? `${c.name} added to Finishing Priorities.` : `${c.name} removed from Finishing Priorities.`); });
-      return;
-    }
     const c = byId(el.dataset.c); const f = el.dataset.f;
     if(!c || !f) return;
+    if(['jobQty','jobUnit','jobDue','jobReceive'].includes(f)){
+      let v = el.value.trim();
+      if(f === 'jobQty') v = v === '' ? '' : String(Math.max(0, Number(v) || 0));
+      const t = isJob(c) ? c : (latestTrialOf(c) || newTrial(c));
+      t[{jobQty:'qty', jobUnit:'unit', jobDue: isJob(c) ? 'dueDate' : 'end', jobReceive:'receiveDate'}[f]] = v;
+      saveQuietly(c);
+      return setTimeout(render, 0);
+    }
+    if(f === 'brandTarget' || f === 'jobType'){ c[f] = el.value; saveQuietly(c); return setTimeout(render, 0); }
+    if(f === 'status' && isJob(c)){
+      const was = jobDone(c);
+      c.status = el.value;
+      if(jobDone(c) && !was) c.doneAt = iso(new Date());
+      if(!jobDone(c) && was){ c.doneAt = ''; c.rank = nextRank(); }
+      saveQuietly(c);
+      if(jobDone(c) && !was) toast(ui.stages.has('job_done') ? `${c.name} is done.` : `${c.name} is done. Tick “Completed jobs” under Show stages to see it again.`);
+      if(!jobDone(c) && was) toast(`${c.name} is back on ${c.partner || 'its partner'}’s list, at the bottom.`);
+      return setTimeout(render, 0);
+    }
     if(f === 'approvedStock'){
       c.approvedStock = el.checked; saveQuietly(c); repaintOthers();
       toast(el.checked ? `${c.name} is approved for our stock and now shows on Stock Offerings. Its stage stays “${stageDef(c.stage).label}”.` : `${c.name} is no longer marked approved for our stock.`);
@@ -568,14 +734,16 @@
       return setTimeout(render, 0);
     }
     if(f === 'stage'){
-      c.stage = el.value; saveQuietly(c); repaintOthers();
+      const wasOpen = isOpen(c);
+      c.stage = el.value;
+      if(isOpen(c) && !wasOpen) c.rank = nextRank();
+      saveQuietly(c); repaintOthers();
       if(c.stage === 'final') toast(`${c.name} is approved – final. It now shows on Stock Offerings.`);
       if(!ui.stages.has(c.stage)) setTimeout(()=>toast(`${c.name} is now “${stageDef(c.stage).label}”, which isn’t ticked under Show stages, so it’s hidden.`), c.stage==='final' ? 2500 : 0);
       return setTimeout(render, 0);
     }
   }
   function repaintOthers(){
-    if(typeof window.renderPrio === 'function') window.renderPrio();
     if(typeof window.renderStock === 'function') window.renderStock();
   }
 
@@ -589,7 +757,13 @@
     const c = btn.dataset.c ? byId(btn.dataset.c) : null;
     switch(act){
       case 'menu': menu.hidden = !menu.hidden; return;
-      case 'edit': return openModal(c, false);
+      case 'edit': return isJob(c) ? openJobModal(c, false) : openModal(c, false);
+      case 'newJob': return openJobModal(null, true);
+      case 'up': case 'down': return move(c, act);
+      case 'copy': {
+        const ok = await copyText(listText(btn.dataset.p));
+        return toast(ok ? `${btn.dataset.p}'s list copied. Paste it into an email or message.` : 'Couldn’t copy automatically.');
+      }
       case 'steps': return openSteps(c);
       case 'new': return openModal(null, true);
       case 'clearSel': selected.clear(); return render();
@@ -597,7 +771,7 @@
         ui.stages = new Set(sameSet(ui.stages, k.stages) ? DEFAULT_STAGES : k.stages); return render(); }
       case 'stageChip': { const k = btn.dataset.k; ui.stages.has(k) ? ui.stages.delete(k) : ui.stages.add(k); return render(); }
       case 'stagesDefault': ui.stages = new Set(DEFAULT_STAGES); return render();
-      case 'stagesAll': ui.stages = new Set(STAGES.map(x=>x.key)); return render();
+      case 'stagesAll': ui.stages = new Set(FILTERS.map(x=>x.key)); return render();
       case 'sort':
         if(ui.sortKey !== btn.dataset.k){ ui.sortKey = btn.dataset.k; ui.sortDir = 1; }
         else if(ui.sortDir === 1) ui.sortDir = -1;
@@ -606,7 +780,6 @@
       case 'bulkSet': return bulkSet(root);
       case 'bulkAdd': return bulkAdd(root);
       case 'bulkUpd': return bulkUpd(root);
-      case 'bulkPrio': return bulkPrio();
       case 'exportJson': menu.hidden = true; return exportJson();
       case 'exportCsv': menu.hidden = true; return exportCsv();
       case 'import': menu.hidden = true; return pickImport();
@@ -624,7 +797,10 @@
     const vals = {stage:v('dvBulkStage'), partner:v('dvBulkPartner'), texture:v('dvBulkTexture'), forecastQuarter:v('dvBulkQuarter')};
     if(!Object.values(vals).some(Boolean)) return alert('Choose a stage, partner, texture or forecast quarter to apply.');
     const list = selectedColors();
-    for(const c of list){ Object.entries(vals).forEach(([k,x])=>{ if(x) c[k] = x; }); await save(c); }
+    for(const c of list){
+      if(vals.partner && vals.partner !== c.partner) c.rank = nextRank();   // joins the bottom of the new partner's list
+      Object.entries(vals).forEach(([k,x])=>{ if(x) c[k] = x; }); await save(c);
+    }
     render(); repaintOthers(); toast(`Updated ${list.length} color${list.length===1?'':'s'}.`);
   }
   async function bulkAdd(root){
@@ -632,7 +808,8 @@
     const type = v('dvBulkAddType'), list = selectedColors();
     for(const c of list){
       const round = type === 'trial' ? (trialCount(c) ? maxRound(c) + 1 : Math.max(1, maxRound(c))) : Math.max(1, maxRound(c));
-      addStepTo(c, blankStep(type, {round, owner:ownerFor(type, c), status:v('dvBulkAddStatus'), start:v('dvBulkAddStart'), end:v('dvBulkAddEnd')}));
+      addStepTo(c, blankStep(type, {round, owner:ownerFor(type, c), status:v('dvBulkAddStatus'), start:v('dvBulkAddStart'), end:v('dvBulkAddEnd'), unit: type === 'trial' ? 'A4s' : ''}));
+      renumber(c);
       await save(c);
     }
     render(); toast(`Added “${typeDef(type).label}” to ${list.length} color${list.length===1?'':'s'}.`);
@@ -647,23 +824,101 @@
       if(!s){ missing++; continue; }
       if(status) s.status = status;
       if(result && typeDef(type).result) s.result = result === 'pending' ? '' : result;
+      if(status === 'Complete' && !s.doneAt) s.doneAt = iso(new Date());
       if(end) s.end = end;
       await save(c); n++;
     }
     render();
     toast(`Updated the latest “${typeDef(type).label}” on ${n} color${n===1?'':'s'}.` + (missing ? ` ${missing} had no such step.` : ''));
   }
-  async function bulkPrio(){
-    if(!window.prioData) return;
-    const list = selectedColors();
-    for(const c of list) await window.prioData.toggle(c.id, true);
-    render(); toast(`${list.length} color${list.length===1?'':'s'} on Finishing Priorities.`);
-  }
   // A new step goes after the last step of an earlier or equal round (production steps stay last).
   function addStepTo(c, s){
     const rd = rdSteps(c), prod = c.steps.filter(x=>phaseOf(x)==='production');
     rd.push(s);
     c.steps = [...rd, ...prod];
+  }
+
+  // ---------- priority order ----------
+  // The open rows shown for one partner, in priority order.
+  function openShown(partner){
+    const seen = new Set();
+    return groups().flatMap(([,l])=>l).filter(c=>{ if(seen.has(c.id)) return false; seen.add(c.id); return isOpen(c) && (c.partner||'') === partner; }).sort(byPriority);
+  }
+  // Puts c at index `to` among `list`. The rows reuse their own rank numbers (plus
+  // c's), so rows that are hidden or belong to other partners keep their place.
+  async function placeAt(c, list, to){
+    list = list.filter(x=>x !== c);
+    list.splice(Math.max(0, Math.min(to, list.length)), 0, c);
+    let slots = list.map(x=>Number(x.rank)||0).sort((a,b)=>a-b);
+    if(slots.includes(0) || new Set(slots).size < slots.length){ const base = nextRank(); slots = list.map((x,k)=>base + k); }
+    const changed = list.filter((x,k)=>{ if(x.rank === slots[k]) return false; x.rank = slots[k]; return true; });
+    await Promise.all(changed.map(save));
+  }
+  async function move(c, dir){
+    const list = openShown(c.partner||''), i = list.indexOf(c), j = dir === 'up' ? i-1 : i+1;
+    if(i < 0 || j < 0 || j >= list.length) return;
+    await placeAt(c, list, j);
+    render();
+  }
+  function listText(partner){
+    const lines = openShown(partner).map((c,i)=>{
+      const t = isJob(c) ? c : latestTrialOf(c);
+      const finish = [c.material, c.finish, c.texture].filter(Boolean).join(' ');
+      const what = isJob(c) ? [c.forTags.join(', '), c.name, finish, c.jobType] : [c.forTags.join(', '), c.name, finish, currentStep(c) ? stepLabel(currentStep(c)) : ''];
+      const qty = t && Number(t.qty) ? `${Number(t.qty).toLocaleString('en-US')} ${t.unit || ''}`.trim() : '';
+      const due = t ? (isJob(c) ? t.dueDate : t.end) : '';
+      const dates = [due ? `due ${fmt(due)}` : '', t && t.receiveDate ? `receive by ${fmt(t.receiveDate)}` : '', c.brandTarget ? `brand target ${fmt(c.brandTarget)}` : ''].filter(Boolean).join(', ');
+      const note = isJob(c) ? c.notes : '';
+      return `${i+1}. ${what.filter(Boolean).join(' – ')}${qty ? ` (${qty})` : ''}${dates ? ` – ${dates}` : ''}${note ? ` – ${note}` : ''}`;
+    });
+    return `${partner} priorities as of ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}\n` + lines.join('\n');
+  }
+  async function copyText(text){
+    try { await navigator.clipboard.writeText(text); return true; }
+    catch(e){
+      const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      let ok = false; try { ok = document.execCommand('copy'); } catch(err){}
+      ta.remove(); return ok;
+    }
+  }
+  // Drag a row by its ⠿ handle (grouped by partner). Rows become draggable only
+  // while the handle is held, so typing in a row is never mistaken for a drag.
+  let dragId = null;
+  function clearMarks(root){ root.querySelectorAll('.drop-before,.drop-after').forEach(x=>x.classList.remove('drop-before','drop-after')); }
+  function endDrag(root){ dragId = null; root.querySelectorAll('tr[draggable]').forEach(x=>{ x.removeAttribute('draggable'); x.classList.remove('dragging'); }); }
+  function setupDrag(root){
+    root.addEventListener('mousedown', e=>{ const h = e.target.closest('.dt-handle'); if(h) h.closest('tr').setAttribute('draggable', 'true'); });
+    root.addEventListener('mouseup', ()=>{ if(!dragId) endDrag(root); });
+    root.addEventListener('dragstart', e=>{
+      const tr = e.target.closest && e.target.closest('tr.dt-row');
+      if(!tr || tr.getAttribute('draggable') !== 'true') return;
+      dragId = tr.dataset.id; e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', dragId); } catch(err){}
+      tr.classList.add('dragging');
+    });
+    root.addEventListener('dragover', e=>{
+      if(!dragId) return;
+      const tr = e.target.closest('tr.dt-row'), c = byId(dragId), o = tr && byId(tr.dataset.id);
+      clearMarks(root);
+      if(!o || o === c || !isOpen(o) || (o.partner||'') !== (c.partner||'')) return;
+      e.preventDefault();
+      const box = tr.getBoundingClientRect();
+      tr.classList.add(e.clientY < box.top + box.height/2 ? 'drop-before' : 'drop-after');
+    });
+    root.addEventListener('drop', async e=>{
+      if(!dragId) return;
+      e.preventDefault();
+      const tr = e.target.closest('tr.dt-row'), c = byId(dragId);
+      const before = tr && tr.classList.contains('drop-before'), after = tr && tr.classList.contains('drop-after');
+      clearMarks(root); endDrag(root);
+      if(!c || !(before || after)) return;
+      const list = openShown(c.partner||'').filter(x=>x !== c), i = list.findIndex(x=>x.id === tr.dataset.id);
+      if(i < 0) return;
+      await placeAt(c, list, before ? i : i + 1);
+      render();
+    });
+    root.addEventListener('dragend', ()=>{ clearMarks(root); endDrag(root); });
   }
 
   function toast(text){
@@ -689,16 +944,17 @@
       readSteps();
       const rd = rdSteps(stepEdit), i = rd.findIndex(s=>s.id===b.dataset.id);
       if(b.dataset.st === 'add'){
-        const type = b.dataset.type || el.querySelector('#dvStepAddType').value;
+        const type = b.dataset.type;
         const round = type === 'trial' ? (trialCount(stepEdit) ? maxRound(stepEdit) + 1 : Math.max(1, maxRound(stepEdit))) : Math.max(1, maxRound(stepEdit));
         const last = rd[rd.length-1];
         const start = last && last.end ? iso(addD(pd(last.end), 1)) : '';
-        addStepTo(stepEdit, blankStep(type, {round, owner:ownerFor(type, stepEdit), start}));
+        addStepTo(stepEdit, blankStep(type, {round, owner:ownerFor(type, stepEdit), start, unit: type === 'trial' ? 'A4s' : ''}));
       }
       if(b.dataset.st === 'del' && confirm('Delete this step?')) setRd(rd.filter(s=>s.id!==b.dataset.id));
       if(b.dataset.st === 'up' && i > 0){ [rd[i-1], rd[i]] = [rd[i], rd[i-1]]; setRd(rd); }
       if(b.dataset.st === 'down' && i < rd.length-1){ [rd[i+1], rd[i]] = [rd[i], rd[i+1]]; setRd(rd); }
       if(b.dataset.st === 'more'){ const r = el.querySelector(`.st-row[data-id="${b.dataset.id}"]`); r.classList.toggle('more'); return; }
+      renumber(stepEdit);
       fillSteps();
     });
   }
@@ -720,39 +976,42 @@
       <datalist id="dvOwnerListSt">${owners.map(o=>`<option value="${esc(o)}">`).join('')}</datalist>
       <div class="st-list">${rd.length ? rd.map((s,i)=>{
         const t = typeDef(s.type);
-        const hasExtra = t.result || t.feedback;
         const filled = TEST_FIELDS.some(f=>s[f.k]);
-        return `<div class="st-row ${filled ? 'more' : ''} st-${esc(s.type)}" data-id="${s.id}">
+        const newRound = i === 0 || rd[i-1].round !== s.round;
+        return `${newRound ? `<div class="st-round-head">Round ${s.round}</div>` : ''}<div class="st-row ${filled ? 'more' : ''} st-${esc(s.type)}" data-id="${s.id}">
           <div class="st-line">
-            <span class="st-round" title="Round"><input data-k="round" type="number" min="1" value="${esc(s.round||1)}" aria-label="Round"></span>
-            <select data-k="type" title="Step type" ${LA('stepType','step type','custom:')}>${typeOptions(s.type)}</select>
-            <input data-k="activity" class="st-label" value="${esc(s.activity)}" placeholder="Description">
+            <select data-k="type" title="Step" ${LA('stepType','step type','custom:')}>${typeOptions(s.type)}</select>
+            <input data-k="activity" class="st-label" value="${esc(s.activity)}" placeholder="Details (optional)">
             <input data-k="owner" list="dvOwnerListSt" value="${esc(s.owner)}" placeholder="Who" class="st-owner">
-            <input data-k="start" type="date" value="${esc(s.start)}" title="Start">
-            <input data-k="end" type="date" value="${esc(s.end)}" title="End">
+            <label class="st-date">Start<input data-k="start" type="date" value="${esc(s.start)}"></label>
+            <label class="st-date">Due<input data-k="end" type="date" value="${esc(s.end)}"></label>
             <select data-k="status" class="st-status st-${esc((s.status||'').replace(/\s+/g,'-').toLowerCase())}" ${LA('stepStatus','status')}>${LO('stepStatus', STEP_STATUSES, s.status, null)}</select>
             <span class="st-btns">
               <button class="icon-btn" data-st="up" data-id="${s.id}" title="Move up" ${i===0?'disabled':''}>↑</button>
               <button class="icon-btn" data-st="down" data-id="${s.id}" title="Move down" ${i===rd.length-1?'disabled':''}>↓</button>
               <button class="icon-btn" data-st="del" data-id="${s.id}" title="Delete step">✕</button></span>
           </div>
+          ${t.job ? `<div class="st-line st-job">
+            <label>Quantity <input data-k="qty" type="number" min="0" step="1" value="${esc(s.qty)}" class="st-qty"></label>
+            <select data-k="unit" ${LA('unit','unit')}>${LO('unit', UNITS, s.unit || 'A4s', null)}</select>
+            <label class="st-date">Receive by<input data-k="receiveDate" type="date" value="${esc(s.receiveDate)}"></label>
+            ${latestTrialOf(c) && latestTrialOf(c).id === s.id ? `<span class="st-linked">Also shown on the Partner Projects list</span>` : ''}
+          </div>` : ''}
           <div class="st-line st-sub">
             ${t.result ? `<label>Result <select data-k="result" class="st-res ${esc(s.result||'pending')}">${RESULTS.map(r=>`<option value="${r.key}" ${(s.result||'')===r.key?'selected':''}>${r.label}</option>`).join('')}</select></label>` : ''}
             ${t.shade ? `<label title="Swatch color of this round">Shade <input data-k="hex" type="color" value="${isHex(s.hex) ? esc(s.hex) : (isHex(c.hex) ? esc(c.hex) : '#B9A58C')}"></label>` : ''}
             ${t.feedback ? `<label>Brand <select data-k="brandFeedback" class="st-fb ${esc(s.brandFeedback||'')}">${BRAND_FEEDBACK.map(f=>`<option value="${f.key}" ${(s.brandFeedback||'')===f.key?'selected':''}>${f.label}</option>`).join('')}</select></label>
               <input data-k="brandNote" value="${esc(s.brandNote)}" placeholder="Brand comment, e.g. needs to be darker" class="st-note">` : ''}
             <input data-k="notes" value="${esc(s.notes)}" placeholder="Notes" class="st-note">
-            ${t.result ? `<button class="linkish" data-st="more" data-id="${s.id}">Test data${filled ? ' ✓' : ''}</button>` : ''}
+            ${t.tests ? `<button class="linkish" data-st="more" data-id="${s.id}">Test data${filled ? ' ✓' : ''}</button>` : ''}
           </div>
-          ${t.result ? `<div class="st-line st-tests">${TEST_FIELDS.map(f=>`<label>${f.label}<input data-k="${f.k}" value="${esc(s[f.k])}"></label>`).join('')}</div>` : ''}
-          ${!hasExtra ? '' : ''}
+          ${t.tests ? `<div class="st-line st-tests">${TEST_FIELDS.map(f=>`<label>${f.label}<input data-k="${f.k}" value="${esc(s[f.k])}"></label>`).join('')}</div>` : ''}
         </div>`; }).join('') : `<p class="dv-muted">No steps yet. Add the first one below.</p>`}</div>
       <div class="st-add">
         <span class="dv-muted">Add a step:</span>
         ${['color_match','trial','ship_in','testing','ship_brand','brand'].map(k=>`<button class="btn secondary" data-st="add" data-type="${k}">+ ${typeDef(k).label}</button>`).join('')}
-        <span class="st-add-other"><select id="dvStepAddType" ${LA('stepType','step type','custom:')}>${typeOptions('send')}</select><button class="btn secondary" data-st="add">+ Add</button></span>
       </div>
-      <p class="dv-hint">A <b>Trial round</b> is one shade attempt and starts a new round. Setting a <b>Brand review</b> to <b>Approved</b> makes the latest trial the final shade and moves the color to Stock Offerings. <b>Changes requested</b> sends it back to coating trial and adds the next trial round.</p>
+      <p class="dv-hint">A <b>Trial round</b> is one shade attempt and starts a new round; its quantity, due and receive-by dates show in the list's <b>Quantity &amp; dates</b> column, and can be changed in either place. Setting a <b>Brand review</b> to <b>Approved</b> makes the latest trial the final shade and moves the color to Stock Offerings. <b>Changes requested</b> sends it back to coating trial and adds the next trial round.</p>
       ${prod ? `<p class="dv-muted dv-prod-note">${prod} brand / production step${prod===1?'':'s'} (purchase order, production run) saved for a future Production tab.</p>` : ''}`;
   }
   function readSteps(){
@@ -761,15 +1020,16 @@
       const s = stepEdit.steps.find(x=>x.id===row.dataset.id); if(!s) return;
       row.querySelectorAll('[data-k]').forEach(inp=>{
         let v = inp.value;
-        if(inp.dataset.k === 'round') v = Math.max(1, parseInt(v, 10) || 1);
-        else v = String(v).trim();
-        if(inp.dataset.k === 'type' && v !== s.type && (!s.activity || s.activity === typeDef(s.type).label)) s.activity = typeDef(v).label;
+        v = String(v).trim();
+        if(inp.dataset.k === 'qty') v = v === '' ? '' : String(Math.max(0, Number(v) || 0));
         s[inp.dataset.k] = v;
       });
     });
   }
   async function saveSteps(){
     readSteps();
+    renumber(stepEdit);
+    rdSteps(stepEdit).forEach(s=>{ if(s.status === 'Complete' && !s.doneAt) s.doneAt = iso(new Date()); if(s.status !== 'Complete') delete s.doneAt; });
     const c = stepEdit, before = byId(c.id);
     const prevFb = id => { const s = before && before.steps.find(x=>x.id===id); return s ? (s.brandFeedback||'') : ''; };
     const brands = rdSteps(c).filter(s=>s.type==='brand');
@@ -788,7 +1048,8 @@
     } else if(latestBrand && changed.includes(latestBrand) && latestBrand.brandFeedback === 'changes'){
       c.stage = 'coating_trial';
       const round = maxRound(c) + 1;
-      addStepTo(c, blankStep('trial', {round, owner:c.partner||'', notes: latestBrand.brandNote ? `Brand asked: ${latestBrand.brandNote}` : 'Brand requested changes'}));
+      addStepTo(c, blankStep('trial', {round, owner:c.partner||'', unit:'A4s', notes: latestBrand.brandNote ? `Brand asked: ${latestBrand.brandNote}` : 'Brand requested changes'}));
+      renumber(c);
       note = `Brand requested changes: ${c.name} is back in coating trial, and trial round ${round} was added.`;
     } else if(latestBrand && changed.includes(latestBrand) && latestBrand.brandFeedback === 'with_brand'){
       c.stage = 'brand_review';
@@ -811,7 +1072,6 @@
     let d = pd(startDate);
     return TEMPLATE.map(t=>{
       const s = blankStep(t.type, {round:1, owner:ownerFor(t.type, c)});
-      if(t.type === 'color_match' && c.partner) s.activity = `${c.partner}: color matching`;
       if(d){ s.start = iso(d); const e = addD(d, t.days-1); s.end = iso(e); d = addD(e, 1); }
       return s;
     });
@@ -882,6 +1142,8 @@
         <div class="form-field"><label>Partner (trial location)</label><input id="dvPartner" list="dvPartnerList" value="${esc(c.partner)}"></div>
         <div class="form-field"><label>Development stage</label><select id="dvStage">${STAGES.map(s=>`<option value="${s.key}" ${c.stage===s.key?'selected':''}>${esc(s.label)}</option>`).join('')}</select>
           <label class="dv-inline" style="margin-top:6px"><input type="checkbox" id="dvApproved" ${c.approvedStock?'checked':''}> Also approved for our stock (shows on Stock Offerings)</label></div>
+        <div class="form-field"><label>Brand target date</label><input id="dvBrandTarget" type="date" value="${esc(c.brandTarget||'')}"><span class="dv-hint">Also in the Quantity &amp; dates column</span></div>
+        <div class="form-field"></div>
         <div class="form-field"><label>Forecasted order (sq ft)</label><input id="dvFcSqft" type="number" min="0" step="10" value="${esc(c.forecastSqft||'')}"></div>
         <div class="form-field"><label>Forecasted order quarter</label><select id="dvFcQ"><option value="">Not set</option>${quarterOptions(c.forecastQuarter).map(q=>`<option ${c.forecastQuarter===q?'selected':''}>${q}</option>`).join('')}</select></div>
         <div class="form-field full"><label>Availability</label><select id="dvAvail" ${LA('availability','availability option')}>${LO('availability', AVAILABILITY, c.availability, 'Not set')}</select></div>
@@ -889,7 +1151,7 @@
         <div class="form-field full"><label>Notes</label><textarea id="dvNotes" rows="2">${esc(c.notes)}</textarea></div>
         ${editingIsNew ? `
         <div class="form-field full dv-newsteps">
-          <label><input type="checkbox" id="dvAddSteps" checked> Add the first steps (send Pantone, color matching, ship samples to Uncaged, Uncaged testing)</label>
+          <label><input type="checkbox" id="dvAddSteps" checked> Add the first steps (send Pantone, color matching, ship samples to us, in-house testing)</label>
           <span>First step starts <input type="date" id="dvStepStart"> <span class="dv-hint">optional: fills in suggested dates from typical durations</span></span>
         </div>` : ''}
       </div>
@@ -903,7 +1165,7 @@
     c.material = v('dvMaterial'); c.finish = v('dvFinish'); c.baseForm = v('dvBaseForm');
     c.bases = [...document.querySelectorAll('#dvModal .dvBase:checked')].map(x=>x.value);
     c.forecastSqft = v('dvFcSqft') === '' ? '' : String(Math.max(0, Math.round(Number(v('dvFcSqft'))) || 0)); c.forecastQuarter = v('dvFcQ');
-    c.texture = v('dvTexture').trim(); c.partner = v('dvPartner').trim(); c.stage = v('dvStage'); c.approvedStock = !!(document.getElementById('dvApproved')||{}).checked;
+    c.texture = v('dvTexture').trim(); c.partner = v('dvPartner').trim(); c.stage = v('dvStage'); c.brandTarget = v('dvBrandTarget'); c.approvedStock = !!(document.getElementById('dvApproved')||{}).checked;
     c.availability = v('dvAvail'); c.photosUrl = v('dvPhotos').trim(); c.notes = v('dvNotes');
   }
   async function saveModal(){
@@ -913,6 +1175,8 @@
     if(c.photosUrl && !/^https?:\/\//i.test(c.photosUrl)) c.photosUrl = 'https://' + c.photosUrl;
     if(editingIsNew && document.getElementById('dvAddSteps').checked) c.steps = templateSteps(c, document.getElementById('dvStepStart').value);
     if(c.stage !== 'final') delete c.finalStepId;
+    const before = byId(c.id);
+    if(editingIsNew || (before && (before.partner||'') !== (c.partner||'')) || (before && isOpen(c) && !isOpen(before))) c.rank = nextRank();
     const btn = document.getElementById('dvSave'); btn.disabled = true;
     try {
       await save(c);
@@ -929,6 +1193,84 @@
     await save(c);
     selected.delete(c.id); closeModal(); render(); repaintOthers();
     toast(`${c.name} moved to Recently deleted.`);
+  }
+
+  // ---------- partner job pop-up ----------
+  let jobEdit = null, jobIsNew = false;
+  function openJobModal(c, isNew){
+    let el = document.getElementById('dvJobModal');
+    if(!el){
+      el = document.createElement('div'); el.className = 'modal-overlay'; el.id = 'dvJobModal';
+      el.innerHTML = `<div class="modal dv-modal"><h2 id="dvJobTitle"></h2><div id="dvJobBody"></div>
+        <div class="modal-actions">
+          <button class="btn danger" id="dvJobDelete" style="margin-right:auto">Delete job</button>
+          <button class="btn secondary" id="dvJobCancel">Cancel</button>
+          <button class="btn" id="dvJobSave">Save</button></div></div>`;
+      document.body.appendChild(el);
+      const close = ()=>{ el.classList.remove('open'); jobEdit = null; };
+      el.querySelector('#dvJobCancel').addEventListener('click', close);
+      el.addEventListener('click', e=>{ if(e.target === el) close(); });
+      el.querySelector('#dvJobSave').addEventListener('click', saveJob);
+      el.querySelector('#dvJobDelete').addEventListener('click', async ()=>{
+        const j = byId(jobEdit.id);
+        if(!j || !confirm(`Delete “${j.name}”? You can restore it from More → Recently deleted.`)) return;
+        j.deletedAt = new Date().toISOString(); await save(j); close(); render(); toast(`${j.name} moved to Recently deleted.`);
+      });
+    }
+    jobIsNew = isNew;
+    jobEdit = isNew ? normalize({kind:'job', id:uid(), name:'', hex:'', jobType:'', partner: ui.groupBy==='partner' ? 'Pearl' : '', forTags:[],
+        material:'', finish:'', texture:'', qty:'', unit:'A4s', dueDate:'', receiveDate:'', brandTarget:'', status:'Not started', notes:'',
+        order: Math.max(0, ...colors.map(x=>x.order||0)) + 1})
+      : JSON.parse(JSON.stringify(c));
+    const j = jobEdit;
+    el.querySelector('#dvJobTitle').textContent = isNew ? 'New partner job' : 'Edit ' + (j.name || 'job');
+    el.querySelector('#dvJobDelete').style.display = isNew ? 'none' : '';
+    el.querySelector('#dvJobBody').innerHTML = `
+      <datalist id="dvJobForList">${allForTags().map(t=>`<option value="${esc(t)}">`).join('')}</datalist>
+      <datalist id="dvJobPartnerList">${allPartners().map(t=>`<option value="${esc(t)}">`).join('')}</datalist>
+      <p class="dv-hint" style="margin-top:0">For partner work that isn’t a color in development, e.g. a gloss adjustment or a panel order. A new color goes under <b>+ New color</b>.</p>
+      <div class="form-grid">
+        <div class="form-field full"><label>What is the job?</label><input id="djName" value="${esc(j.name)}" placeholder="e.g. Chocolate Luxe panel, Higher gloss"></div>
+        <div class="form-field"><label>Partner</label><input id="djPartner" list="dvJobPartnerList" value="${esc(j.partner)}"></div>
+        <div class="form-field"><label>Project / brand</label><input id="djFor" list="dvJobForList" value="${esc(j.forTags.join(', '))}" placeholder="e.g. Dior"></div>
+        <div class="form-field"><label>Job type</label><select id="djType" ${LA('job','job type')}>${LO('job', JOBS, j.jobType, 'Not set')}</select></div>
+        <div class="form-field"><label>Status</label><select id="djStatus" ${LA('stepStatus','status')}>${LO('stepStatus', STEP_STATUSES, j.status, null)}</select></div>
+        <div class="form-field"><label>Material</label><select id="djMaterial" ${LA('material','material')}>${LO('material', MATERIALS, j.material, 'Not set')}</select></div>
+        <div class="form-field"><label>Finish</label><select id="djFinish" ${LA('finish','finish')}>${LO('finish', FINISHES, j.finish, 'Not set')}</select></div>
+        <div class="form-field"><label>Texture</label><select id="djTexture" ${LA('texture','texture')}>${LO('texture', DEV_TEXTURES, j.texture, 'Not set')}</select></div>
+        <div class="form-field"><label>Quantity</label><div class="hex-row"><input id="djQty" type="number" min="0" step="1" value="${esc(j.qty)}">
+          <select id="djUnit" ${LA('unit','unit')}>${LO('unit', UNITS, j.unit || 'A4s', null)}</select></div></div>
+        <div class="form-field"><label>Due</label><input id="djDue" type="date" value="${esc(j.dueDate)}"></div>
+        <div class="form-field"><label>Receive by</label><input id="djReceive" type="date" value="${esc(j.receiveDate)}"></div>
+        <div class="form-field"><label>Brand target date</label><input id="djTarget" type="date" value="${esc(j.brandTarget)}"></div>
+        <div class="form-field full"><label>Notes</label><textarea id="djNotes" rows="2">${esc(j.notes)}</textarea></div>
+      </div>`;
+    el.classList.add('open');
+    el.querySelector('#djName').focus();
+  }
+  async function saveJob(){
+    const v = id => (document.getElementById(id) || {}).value || '';
+    const j = jobEdit, before = byId(j.id);
+    j.name = v('djName').trim(); j.partner = v('djPartner').trim(); j.forTags = v('djFor').split(',').map(x=>x.trim()).filter(Boolean);
+    j.jobType = v('djType'); j.material = v('djMaterial'); j.finish = v('djFinish'); j.texture = v('djTexture');
+    j.qty = v('djQty') === '' ? '' : String(Math.max(0, Number(v('djQty')) || 0)); j.unit = v('djUnit');
+    j.dueDate = v('djDue'); j.receiveDate = v('djReceive'); j.brandTarget = v('djTarget'); j.notes = v('djNotes');
+    const wasDone = before ? jobDone(before) : false;
+    j.status = v('djStatus');
+    if(!j.name) return alert('Say what the job is.');
+    if(jobDone(j) && !wasDone) j.doneAt = iso(new Date());
+    if(jobIsNew || (before && (before.partner||'') !== (j.partner||'')) || (wasDone && !jobDone(j))) j.rank = nextRank();
+    const btn = document.getElementById('dvJobSave'); btn.disabled = true;
+    try {
+      await save(j);
+      const i = colors.findIndex(x=>x.id===j.id);
+      if(i >= 0) colors[i] = j; else colors.push(j);
+      document.getElementById('dvJobModal').classList.remove('open'); jobEdit = null;
+      if(jobIsNew && !ui.stages.has('job')){ ui.stages.add('job'); }
+      render();
+      if(jobIsNew) toast(`Added to the bottom of ${j.partner || 'the'} list. Use ↑ ↓ or drag ⠿ to move it up.`);
+    } catch(e){ /* the storage layer shows a banner */ }
+    finally { btn.disabled = false; }
   }
 
   // ---------- small dialogs ----------
@@ -989,21 +1331,21 @@
   function stamp(){ return iso(new Date()); }
   function exportJson(){
     const data = {format:'uncaged-in-development', version:2, exportedAt:new Date().toISOString(), colors: live(), settings};
-    download(`in-development-backup-${stamp()}.json`, JSON.stringify(data, null, 1), 'application/json');
+    download(`partner-projects-backup-${stamp()}.json`, JSON.stringify(data, null, 1), 'application/json');
   }
   function exportCsv(){
     const q = v => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
     const head = ['Color','Pantone','Project','Material','Base color','Texture','Finish','Forecast sq ft','Forecast quarter','Partner','Stage',
-      'Phase','Round','Step type','Step','Who','Start','End','Days','Status','Result','Brand feedback','Brand comment', ...TEST_FIELDS.map(f=>f.label), 'Notes'];
+      'Phase','Round','Step','Details','Who','Start','Due','Days','Status','Result','Brand feedback','Brand comment', ...TEST_FIELDS.map(f=>f.label), 'Notes'];
     const rows = [head];
-    live().sort((a,b)=>a.order-b.order).forEach(c=>{
-      const base = [c.name,c.pantone,c.forTags.join('; '),c.material,c.bases.join(' + '),c.texture||'',c.finish,c.forecastSqft||'',c.forecastQuarter||'',c.partner,stageDef(c.stage).label];
+    liveColors().sort((a,b)=>a.order-b.order).forEach(c=>{
+      const base = [c.name,c.pantone,c.forTags.join('; '),c.material,c.bases.join(' + '),c.texture||'',c.finish,c.forecastSqft||'',c.forecastQuarter||'',c.partner,stageLabel(c)];
       if(!c.steps.length) rows.push(base);
-      c.steps.forEach(s=>rows.push([...base, phaseOf(s)==='rd'?'Development':'Brand / production', s.round||'', typeDef(s.type).label, s.activity, s.owner, s.start, s.end, days(s), s.status,
+      c.steps.forEach(s=>rows.push([...base, phaseOf(s)==='rd'?'Development':'Brand / production', s.round||'', stepLabel(s), s.activity, s.owner, s.start, s.end, days(s), s.status,
         typeDef(s.type).result ? (RESULTS.find(r=>r.key===(s.result||''))||{}).label : '', s.type==='brand' ? feedbackLabel(s.brandFeedback) : '', s.brandNote||'',
         ...TEST_FIELDS.map(f=>s[f.k]||''), s.notes]));
     });
-    download(`in-development-${stamp()}.csv`, '﻿' + rows.map(r=>r.map(q).join(',')).join('\r\n'), 'text/csv');
+    download(`partner-projects-steps-${stamp()}.csv`, '﻿' + rows.map(r=>r.map(q).join(',')).join('\r\n'), 'text/csv');
   }
   function pickImport(){
     const inp = document.createElement('input');
@@ -1013,10 +1355,10 @@
       let data;
       try { data = JSON.parse(await file.text()); } catch(e){ return alert('That file isn’t a valid backup (couldn’t read it as JSON).'); }
       if(!data || data.format !== 'uncaged-in-development' || !Array.isArray(data.colors))
-        return alert('That file isn’t an In Development backup.');
+        return alert('That file isn’t a Partner Projects backup.');
       const incoming = data.colors.map(normalize);
       const replacing = incoming.filter(c=>byId(c.id)).length;
-      if(!confirm(`Import ${incoming.length} colors?` + (replacing ? `\n\n${replacing} already exist here and will be replaced with the version in the file.` : ''))) return;
+      if(!confirm(`Import ${incoming.length} colors and jobs?` + (replacing ? `\n\n${replacing} already exist here and will be replaced with the version in the file.` : ''))) return;
       toast('Importing…');
       for(const c of incoming){
         delete c.deletedAt;
@@ -1028,7 +1370,7 @@
         data.settings.baseColors.forEach(b=>{ if(!settings.baseColors.some(x=>x.name===b.name)) settings.baseColors.push(b); });
         await saveSettings();
       }
-      render(); repaintOthers(); toast(`Imported ${incoming.length} colors.`);
+      render(); repaintOthers(); toast(`Imported ${incoming.length} colors and jobs.`);
     });
     inp.click();
   }
@@ -1040,10 +1382,11 @@
     root.addEventListener('change', onChange);
     root.addEventListener('click', onClick);
     root.addEventListener('input', onInput);
-    // Read-only view of In Development for Stock Offerings (stock.js) and Finishing Priorities (prio.js).
+    setupDrag(root);
+    // Read-only view of the colors for Stock Offerings (stock.js). Partner jobs are left out.
     window.devData = {
-      colors: () => live(),
-      byId: id => { const c = byId(id); return c && !c.deletedAt ? c : null; },
+      colors: () => liveColors(),
+      byId: id => { const c = byId(id); return c && !c.deletedAt && !isJob(c) ? c : null; },
       bases: () => settings.baseColors.slice(),
       stage: k => stageDef(k),
       finalShade: c => finalShade(c),

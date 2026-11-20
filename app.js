@@ -1008,7 +1008,6 @@ function renderAll(){
   renderEventView();
   if(typeof window.renderDev === 'function') window.renderDev();
   if(typeof window.renderStock === 'function') window.renderStock();
-  if(typeof window.renderPrio === 'function') window.renderPrio();
   if(currentView === 'timeline' && pendingScrollToToday){
     scrollToToday();
     pendingScrollToToday = false;
@@ -1026,9 +1025,9 @@ function scrollToToday(){
 function renderTabBar(){
   const tabs = [
     {key:'stock', label:'Stock Offerings'},
-    // In Development (table). The earlier timeline layout was retired.
-    {key:'dev2', label:'In Development'},
-    {key:'prio', label:'Finishing Priorities'},
+    // Partner Projects (dev.js): colors in development plus other partner jobs,
+    // in each partner's priority order. It replaced In Development and Finishing Priorities.
+    {key:'dev2', label:'Partner Projects'},
     {key:'calendar', label:'Calendar'},
     {key:'textures', label:'Textures'},
     {key:'event', label:'Client A Event'},
@@ -1054,10 +1053,9 @@ function applyViewVisibility(){
   document.getElementById('viewTimeline').style.display = 'none';
   document.getElementById('viewDev').style.display = currentView === 'dev' ? '' : 'none';
   document.getElementById('viewDev2').style.display = currentView === 'dev2' ? '' : 'none';
-  document.getElementById('viewPrio').style.display = currentView === 'prio' ? '' : 'none';
   document.getElementById('viewStock').style.display = currentView === 'stock' ? '' : 'none';
   // "+ Add color" belongs to the old swatch board; the new tabs have their own buttons.
-  document.getElementById('addColorBtn').style.display = (currentView === 'dev' || currentView === 'dev2' || currentView === 'prio' || currentView === 'stock') ? 'none' : '';
+  document.getElementById('addColorBtn').style.display = (currentView === 'dev' || currentView === 'dev2' || currentView === 'stock') ? 'none' : '';
   document.getElementById('viewSwatch').style.display = currentView === 'swatch' ? '' : 'none';
   document.getElementById('viewCalendar').style.display = currentView === 'calendar' ? '' : 'none';
   document.getElementById('viewTextures').style.display = currentView === 'textures' ? '' : 'none';
@@ -1218,7 +1216,7 @@ function buildCollectionPDF(groupName){
   doc.setFont('helvetica','bold'); doc.setFontSize(20); doc.setTextColor(30,27,24);
   doc.text(groupName, M, M + 14);
   doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(110,102,92);
-  doc.text(`Uncaged Innovations · ${items.length} swatch${items.length===1?'':'es'} · exported ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`, M, M + 30);
+  doc.text(`${items.length} swatch${items.length===1?'':'es'} · exported ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`, M, M + 30);
   doc.setDrawColor(218,209,190); doc.line(M, M + 40, PW - M, M + 40);
 
   const {cols, cardW, s, cardH} = L;
@@ -1260,7 +1258,7 @@ function openExportModal(groupName){
   const stageLabel = k => (STAGE_DEFS.find(d=>d.key===k)||{}).label || k;
   document.getElementById('exportTitle').textContent = `${groupName} — PDF preview`;
   document.getElementById('exportPreview').innerHTML =
-    `<div class="exp-head"><h2>${escAttr(groupName)}</h2><div>Uncaged Innovations · ${items.length} swatch${items.length===1?'':'es'} · exported ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div></div>` +
+    `<div class="exp-head"><h2>${escAttr(groupName)}</h2><div>${items.length} swatch${items.length===1?'':'es'} · exported ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div></div>` +
     `<div class="exp-grid">` + items.map(c=>`
       <div class="exp-card">
         <div class="exp-sw" style="background:${c.hex}"></div>

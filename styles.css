@@ -785,10 +785,10 @@
   .pr-notes{width:100%;min-width:160px;resize:none;overflow:hidden;}
   .pr-row.manual td:first-child{box-shadow:inset 3px 0 0 var(--line);}
   .pr-row.linked td:first-child{box-shadow:inset 3px 0 0 #4F7A4F;}
-  .st-row > .st-line:first-child{display:grid;grid-template-columns:62px 168px minmax(140px,1fr) 118px 138px 138px 122px auto;gap:6px;align-items:center;}
+  .st-row > .st-line:first-child{display:grid;grid-template-columns:180px minmax(140px,1fr) 118px auto auto 122px auto;gap:6px;align-items:center;}
   .st-row > .st-line:first-child .st-label,.st-row > .st-line:first-child .st-owner{width:auto;}
   .st-btns{margin-left:0;}
-  @media (max-width: 900px){ .st-row > .st-line:first-child{grid-template-columns:62px 1fr 1fr;} .st-btns{grid-column:1 / -1;justify-content:flex-end;} }
+  @media (max-width: 900px){ .st-row > .st-line:first-child{grid-template-columns:1fr 1fr;} .st-btns{grid-column:1 / -1;justify-content:flex-end;} }
 
   /* Finishing Priorities: partner sections, drag, done */
   .pr-section{margin-bottom:22px;}
@@ -835,3 +835,43 @@
   .dt-stockflag{display:flex;align-items:center;gap:5px;margin-top:5px;font-size:11px;color:var(--ink-soft);cursor:pointer;white-space:nowrap;}
   .dt-stockflag.on{color:#3E6B3E;font-weight:600;}
   .dt-stockflag input{margin:0;accent-color:#4F7A4F;}
+
+  /* ---------- Partner Projects: priority numbers, partner jobs, quantity & dates ---------- */
+  .dt-rankh{width:64px;text-align:center;}
+  .dt-rank{white-space:nowrap;text-align:center;width:64px;}
+  .dt-rank b{font-family:'Fraunces',serif;font-size:18px;vertical-align:middle;margin:0 2px;}
+  .dt-handle{cursor:grab;color:var(--ink-soft);font-size:15px;user-select:none;vertical-align:middle;}
+  .dt-handle:hover{color:var(--ink);}
+  .dt-move{display:inline-flex;flex-direction:column;vertical-align:middle;gap:1px;}
+  .dt-move .icon-btn{width:18px;height:16px;font-size:10px;line-height:1;padding:0;}
+  .dt-row.dragging{opacity:.45;}
+  .dt-row.drop-before td{box-shadow:inset 0 3px 0 var(--saddle);}
+  .dt-row.drop-after td{box-shadow:inset 0 -3px 0 var(--saddle);}
+  .dt-copy{margin-left:10px;font-size:11.5px;text-transform:none;letter-spacing:0;font-weight:600;}
+  .dt-orderhint{margin:4px 0 8px;}
+  .dt-job{min-width:228px;}
+  .dt-job input,.dt-job select{font:inherit;font-size:12px;padding:3px 5px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);}
+  .dt-job-qty{display:flex;gap:4px;margin-bottom:4px;}
+  .dt-job-qty input{width:62px;}
+  .dt-job-date{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-soft);margin-top:2px;white-space:nowrap;}
+  .dt-job-date input{width:128px;padding:2px 4px;}
+  .dt-job-date.late,.dt-job-date.late input{color:var(--rose);}
+  .dt-jobrow td{background:#FCFAF6;}
+  .dt-jobrow.is-done{opacity:.6;}
+  .dt-jobswatch{background:repeating-linear-gradient(45deg,#EFE7DA 0 6px,#E2D6C4 6px 12px);}
+  .dv-check-sp{display:inline-block;width:16px;}
+  .dt-jobstatus,.dt-jobtype{font:inherit;font-size:12.5px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);font-weight:600;}
+  .dt-jobstatus.st-complete{color:#3E6B3E;} .dt-jobstatus.st-in-progress{color:#A97B22;} .dt-jobstatus.st-at-risk{color:var(--rose);}
+  .dt-jobtype.unset{color:var(--ink-soft);font-weight:400;}
+  .dt-jobnote{font-size:11.5px;margin-top:3px;max-width:220px;}
+  .dt-prog-detail{display:block;font-weight:400;color:var(--ink-soft);font-size:11.5px;}
+
+  /* Progress pop-up: rounds are numbered automatically */
+  .st-round-head{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--saddle-dark);margin:6px 0 -2px;}
+  .st-round-head:first-child{margin-top:0;}
+  .st-date{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-soft);}
+  .st-job label{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--ink-soft);font-weight:600;text-transform:uppercase;letter-spacing:.03em;}
+  .st-qty{width:70px;}
+  .st-linked{font-size:11.5px;color:var(--saddle);font-weight:600;margin-left:auto;}
+  .st-res.done{color:#3E6B3E;font-weight:600;}
+  .st-date input{width:132px;}

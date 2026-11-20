@@ -87,7 +87,7 @@
       if (!u) { showSignIn(signInMessage); signInMessage = ''; return; }
       if (!isAllowed(u)) {
         // Signing out fires this handler again with no user, which shows the message.
-        signInMessage = 'That account isn’t allowed. Sign in with your @' + domain + ' Google account.';
+        signInMessage = 'That account isn’t allowed. Sign in with your company Google account.';
         await auth.signOut();
         return;
       }
@@ -99,8 +99,8 @@
     });
 
     function showSignIn(message){
-      showOverlay('Color & Finish Development Calendar',
-        'Sign in with your @' + domain + ' Google account to open the team tracker.',
+      showOverlay('Production',
+        'Sign in with your company Google account to open the team tracker.',
         true, message, signIn);
     }
 
