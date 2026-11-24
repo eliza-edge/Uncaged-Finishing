@@ -2,11 +2,13 @@
  * Stock Offerings tab.
  *
  * Coating colors: what we can sell. Each offering is a color in one
- * material (Signature or Luxe) with one or more textures (Fine Grain, Pebble,
+ * material (Signature or Luxe) with one or more textures (Lenzo, Pebble,
  * Nappa) and finishes (Satin, Matte). Colors approved in In Development
  * (stage "Approved – final") appear here automatically.
  *
- * Base colors: uncoated material in stock, by lot.
+ * Base colors: uncoated material in stock, by lot. Shown only once live stock
+ * numbers are switched on (SHOW_STOCK); until then the coating colors, grouped
+ * by base, already cover it.
  *
  * Stock numbers come from the inventory tracking sheet. Someone downloads it as
  * .xlsx and picks it with "Update stock from sheet"; only totals per color /
@@ -23,7 +25,7 @@
   const PREFIX = 'offer-';
   const SNAP_KEY = 'stockSnapshot';
   const SETTINGS_KEY = 'stockSettings';
-  const TEXTURES = ['Fine Grain','Pebble','Nappa'];
+  const TEXTURES = ['Lenzo','Pebble','Nappa'];
   const FINISHES = ['Satin','Matte'];
   const MATERIALS = ['Signature','Luxe'];
   const AVAILABILITY = [
@@ -51,9 +53,9 @@
     ['Signature','Olive','#5B6236','5753 C',['Onyx'],[['Pebble','Satin'],['Nappa','Satin']]],
     ['Signature','Onyx','#161513','',['Onyx'],[['Pebble','Satin'],['Nappa','Satin'],['Nappa','Matte']]],
     ['Signature','Stone','#B8AEB0','',['Stone'],[['Nappa','Matte']]],
-    ['Luxe','Cashew','#C9A27A','',[],[['Fine Grain','']]],
-    ['Luxe','Natural','#EFD0AD','719 C',['Natural'],[['Fine Grain','']]],
-    ['Luxe','Onyx','#161513','',['Onyx'],[['Fine Grain','']]],
+    ['Luxe','Cashew','#C9A27A','',[],[['Lenzo','']]],
+    ['Luxe','Natural','#EFD0AD','719 C',['Natural'],[['Lenzo','']]],
+    ['Luxe','Onyx','#161513','',['Onyx'],[['Lenzo','']]],
   ];
 
   // Dropdowns backed by a shared list get "+ Add new…" (see lists.js).
@@ -92,6 +94,8 @@
   }
   function normalize(o){
     o.textures = Array.isArray(o.textures) ? o.textures : [];
+    // Fine Grain was renamed Lenzo.
+    o.textures.forEach(t=>{ if(/^\s*fine ?grain\s*$/i.test(t.texture || '')) t.texture = 'Lenzo'; });
     o.bases = Array.isArray(o.bases) ? o.bases : [];
     o.forTags = Array.isArray(o.forTags) ? o.forTags : [];
     if(typeof o.order !== 'number') o.order = Date.now();
@@ -104,10 +108,10 @@
   }
 
   // Texture / finish / material from the inventory sheet's wording.
-  // Supplier names: Freeport = Fine Grain, Denver = Pebble.
+  // Supplier names: Freeport = Lenzo (formerly called Fine Grain), Denver = Pebble.
   function parseTexture(raw){
     const s = norm(raw);
-    const texture = /freeport|fine ?grain/.test(s) ? 'Fine Grain' : /denver|pebble/.test(s) ? 'Pebble' : /nappa/.test(s) ? 'Nappa' : String(raw||'').trim();
+    const texture = /freeport|fine ?grain|lenzo/.test(s) ? 'Lenzo' : /denver|pebble/.test(s) ? 'Pebble' : /nappa/.test(s) ? 'Nappa' : String(raw||'').trim();
     const finish = /satin/.test(s) ? 'Satin' : /matte/.test(s) ? 'Matte' : '';
     const luxe = /luxe|freeport/.test(s);
     return {texture, finish, luxe};
@@ -187,8 +191,8 @@
       ${summaryHTML()}
       <div class="dv-toolbar">
         <div class="dv-tools-left">
-          <div class="so-seg">${[['all','All'],['coating','Coating colors'],['base','Base colors']].map(([k,l])=>
-            `<button class="${ui.view===k?'active':''}" data-act="view" data-v="${k}">${l}</button>`).join('')}</div>
+          ${SHOW_STOCK ? `<div class="so-seg">${[['all','All'],['coating','Coating colors'],['base','Base colors']].map(([k,l])=>
+            `<button class="${ui.view===k?'active':''}" data-act="view" data-v="${k}">${l}</button>`).join('')}</div>` : ''}
           <input type="search" class="dv-search" placeholder="Search colors, Pantone, brand…" value="${esc(ui.q)}" data-act="search" data-fk="search">
           <label class="dv-inline">Material <select data-act="material"><option value="">All</option>${LG('material', MATERIALS).map(m=>`<option ${ui.material===m?'selected':''}>${m}</option>`).join('')}</select></label>
           <label class="dv-inline">Texture <select data-act="texture"><option value="">All</option>${LG('texture', TEXTURES).map(t=>`<option ${ui.texture===t?'selected':''}>${t}</option>`).join('')}</select></label>
@@ -210,8 +214,8 @@
         ? `Stock numbers from <b>${esc(snap.fileName||'the inventory sheet')}</b>, updated ${esc(fmtDate(snap.importedAt))}${snap.uncoatedAsOf ? ` (uncoated material last updated ${esc(fmtDate(snap.uncoatedAsOf))})` : ''}.`
         : `No stock numbers yet. Download the inventory tracking sheet as .xlsx and choose <b>Update stock from sheet…</b>`}</div>`}
       ${ui.base ? `<div class="so-filter">Showing colors on <b>${esc(ui.base)}</b> <button class="linkish" data-act="clearBase">Show all bases</button></div>` : ''}
-      ${ui.view !== 'base' ? coatingHTML() : ''}
-      ${ui.view !== 'coating' ? baseHTML() : ''}
+      ${!SHOW_STOCK || ui.view !== 'base' ? coatingHTML() : ''}
+      ${SHOW_STOCK && ui.view !== 'coating' ? baseHTML() : ''}
     `;
     if(fk){ const el = root.querySelector(`[data-fk="${CSS.escape(fk)}"]`); if(el){ el.focus(); if(el.type==='search') el.setSelectionRange(el.value.length, el.value.length); } }
   }
@@ -261,7 +265,8 @@
     'No swatches, no full scale run scheduled':        {label:'Not available',            cls:'off'},
   };
   const availShort = a => AVAIL_SHORT[a] || {label:'Availability not set', cls:'unset'};
-  const texClass = t => 'tx-' + slug(t && t.texture || 'none') + (t && t.finish === 'Satin' ? ' fin-satin' : '');
+  // Swatches are plain color (no grain or shine), like Old Stock Offerings.
+  const texClass = () => '';
   const TEX_SHORT = t => [t.finish === 'Matte' ? 'Matte' : '', t.texture].filter(Boolean).join(' ');
   const preview = {};   // offering id -> index of the texture shown on its swatch
 
@@ -347,7 +352,6 @@
         ${row('Notes', o.notes ? esc(o.notes) : '')}
         ${SHOW_STOCK ? `<div class="so-texlist">${texRowsHTML(o)}</div>` : ''}
       </div>
-      <p class="dv-hint">Swatches show the grain as a rough preview only – not color- or texture-accurate.</p>
     </div>`;
   }
   function openDetail(o){

@@ -96,8 +96,10 @@
   function rdSteps(c){ return c.steps.filter(s=>phaseOf(s)==='rd'); }
   // Approved and stopped colors leave the list by default.
   const DONE_STAGES = ['final','failed_stopped'];
-  // Textures match Stock Offerings and the inventory sheet (Freeport = Fine Grain, Denver = Pebble).
-  const DEV_TEXTURES = ['Fine Grain','Pebble','Nappa'];
+  // Textures match Stock Offerings and the inventory sheet (Freeport = Lenzo, formerly called Fine Grain; Denver = Pebble).
+  const DEV_TEXTURES = ['Lenzo','Pebble','Nappa'];
+  // Fine Grain was renamed Lenzo; older records are shown and saved with the new name.
+  const renameTexture = t => /^\s*fine ?grain\s*$/i.test(t || '') ? 'Lenzo' : t;
   const SQFT_PER_YARD = 12.5;   // the Vault's rule: 1 usable yd ≈ 0.5 panel ≈ 12.5 sq ft
   function quarterOf(d){ return d.getFullYear() + ' Q' + (Math.floor(d.getMonth()/3) + 1); }
   function quarterOptions(current){
@@ -236,6 +238,7 @@
   function normalize(c){
     c.forTags = Array.isArray(c.forTags) ? c.forTags : [];
     c.bases = Array.isArray(c.bases) ? c.bases : [];
+    if(c.texture) c.texture = renameTexture(c.texture);
     if(isJob(c)){
       c.steps = []; c.v = 2; c.stage = 'job'; c.status = c.status || 'Not started';
       if(typeof c.order !== 'number') c.order = Date.now();
@@ -273,6 +276,43 @@
     return st.find(s=>s.status==='In progress' || s.status==='At risk') ||
            st.find(s=>s.status==='Not started' || s.status==='TBD') || st[st.length-1];
   }
+  // The stage follows Progress. The furthest-along step that is In progress (or
+  // At risk), or finished with a result, sets it: a step in progress sets its
+  // stage, a failed result means more trials, a passed test means passed.
+  // "Approved – final" and "Failed – no more trials" are only ever set by hand
+  // (or by brand approval), so they are left alone.
+  // A step whose status or result was just changed comes first: what you just
+  // updated is what the stage shows.
+  function stageFromSteps(c, before){
+    if(isJob(c) || ['final','failed_stopped'].includes(c.stage)) return null;
+    const rd = rdSteps(c);
+    const active = s => s.status==='In progress' || s.status==='At risk';
+    const counts = s => active(s) || (s.status==='Complete' && typeDef(s.type).result && s.result);
+    const old = id => before && before.steps.find(x=>x.id===id);
+    const touched = rd.filter(s=>{ const o = old(s.id); return !o || o.status !== s.status || (o.result||'') !== (s.result||''); });
+    const cur = touched.filter(counts).pop() || rd.filter(counts).pop();
+    if(!cur) return null;
+    if(active(cur)){
+      if(cur.type === 'testing') return 'testing';
+      if(cur.type === 'ship_brand' || cur.type === 'brand') return 'brand_review';
+      if(['send','color_match','trial','ship_in'].includes(cur.type))
+        return rd.slice(0, rd.indexOf(cur)).some(s=>s.result==='fail') ? 'failed_retrying' : 'coating_trial';
+      return null;                                   // Other / custom steps don't change the stage
+    }
+    if(cur.result === 'fail') return 'failed_retrying';
+    if(cur.type === 'testing' && cur.result === 'pass') return 'passed';
+    return null;
+  }
+  // Sets the stage from Progress. Returns the new stage's label if it changed.
+  function syncStage(c, before){
+    const st = stageFromSteps(c, before);
+    if(!st || st === c.stage) return '';
+    c.stage = st;
+    return stageDef(st).label;
+  }
+  // Only a change to a step's status or result moves the stage, so a color put
+  // On hold by hand stays there until its progress actually changes.
+  const progressKey = c => c ? rdSteps(c).map(s=>s.id + ':' + s.status + ':' + (s.result||'')).join('|') : '';
   function resultSteps(c){ return rdSteps(c).filter(s=>typeDef(s.type).result); }
   function latestResult(c){ const r = resultSteps(c); return r.filter(s=>s.result).pop() || r[r.length-1]; }
   function finalShade(c){
@@ -581,7 +621,6 @@
       <span class="dt-prog-step">${esc(stepLabel(cur))}${cur.activity ? `<span class="dt-prog-detail">${esc(cur.activity)}</span>` : ''}</span>
       <span class="dt-prog-meta"><span class="dt-pill ${stCls}">${esc(cur.status)}</span>
         ${cur.start||cur.end ? `<span class="${late?'dt-late':'dv-muted'}">${esc(fmt(cur.start)||'?')} – ${esc(fmt(cur.end)||'…')}</span>` : ''}</span>
-      <span class="dt-prog-count">${st.length} step${st.length===1?'':'s'} · open</span>
     </button>`;
   }
 
@@ -595,13 +634,12 @@
   function jobCell(c, fk){
     const t = isJob(c) ? c : latestTrialOf(c);
     const done = isJob(c) ? jobDone(c) : !!(t && t.status === 'Complete');
-    const due = t ? (isJob(c) ? t.dueDate : t.end) : '', rcv = t ? t.receiveDate : '';
+    const rcv = t ? t.receiveDate : '';   // the due date stays in the Progress pop-up / job pop-up
     const late = d => d && pd(d) < today() && !done ? 'late' : '';
     const tip = isJob(c) ? '' : (t ? `From trial round ${t.round}` : 'Fills in a new trial round');
     return `<td class="dt-job" title="${esc(tip)}">
       <div class="dt-job-qty"><input type="number" min="0" step="1" placeholder="Qty" value="${esc(t ? t.qty : '')}" data-c="${c.id}" data-f="jobQty" data-fk="${esc(fk)}|jq">
         <select data-c="${c.id}" data-f="jobUnit" data-fk="${esc(fk)}|ju" ${LA('unit','unit')}>${LO('unit', UNITS, (t && t.unit) || 'A4s', null)}</select></div>
-      <label class="dt-job-date ${late(due)}">Due<input type="date" value="${esc(due||'')}" data-c="${c.id}" data-f="jobDue" data-fk="${esc(fk)}|jd"></label>
       <label class="dt-job-date ${late(rcv)}">Receive by<input type="date" value="${esc(rcv||'')}" data-c="${c.id}" data-f="jobReceive" data-fk="${esc(fk)}|jr"></label>
       <label class="dt-job-date">Brand target<input type="date" value="${esc(c.brandTarget||'')}" data-c="${c.id}" data-f="brandTarget" data-fk="${esc(fk)}|bt"></label>
     </td>`;
@@ -640,7 +678,7 @@
         <span class="dt-name" data-act="edit" data-c="${c.id}" title="Edit color details"><b>${esc(c.name||'Untitled')}</b>${c.pantone ? `<span class="dv-code">${esc(c.pantone)}</span>` : ''}</span>
       </div></td>
       <td>${esc(c.partner||'—')}</td>
-      <td><select class="dv-stage" data-c="${c.id}" data-f="stage" data-fk="${esc(fk)}|stage" style="background:${st.color};color:${contrast(st.color)}">
+      <td><select class="dv-stage" title="Follows Progress: it changes when a step is set In progress or gets a result. You can still set it here (e.g. On hold)." data-c="${c.id}" data-f="stage" data-fk="${esc(fk)}|stage" style="background:${st.color};color:${contrast(st.color)}">
         ${STAGES.map(x=>`<option value="${x.key}" ${c.stage===x.key?'selected':''}>${esc(x.label)}</option>`).join('')}</select>
         <label class="dt-stockflag ${isApproved(c)?'on':''}" title="${c.stage==='final' ? 'Approved – final always counts as approved for our stock' : 'Also approved for our stock: it shows on Stock Offerings while it stays in this stage'}">
           <input type="checkbox" data-c="${c.id}" data-f="approvedStock" ${isApproved(c)?'checked':''} ${c.stage==='final'?'disabled':''}> Approved for our stock</label></td>
@@ -822,13 +860,15 @@
     for(const c of selectedColors()){
       const s = rdSteps(c).filter(x=>x.type===type).pop();
       if(!s){ missing++; continue; }
+      const prev = JSON.parse(JSON.stringify(c));   // to see which step changed
       if(status) s.status = status;
       if(result && typeDef(type).result) s.result = result === 'pending' ? '' : result;
       if(status === 'Complete' && !s.doneAt) s.doneAt = iso(new Date());
       if(end) s.end = end;
+      if(status || result) syncStage(c, prev);
       await save(c); n++;
     }
-    render();
+    render(); repaintOthers();
     toast(`Updated the latest “${typeDef(type).label}” on ${n} color${n===1?'':'s'}.` + (missing ? ` ${missing} had no such step.` : ''));
   }
   // A new step goes after the last step of an earlier or equal round (production steps stay last).
@@ -1011,7 +1051,7 @@
         <span class="dv-muted">Add a step:</span>
         ${['color_match','trial','ship_in','testing','ship_brand','brand'].map(k=>`<button class="btn secondary" data-st="add" data-type="${k}">+ ${typeDef(k).label}</button>`).join('')}
       </div>
-      <p class="dv-hint">A <b>Trial round</b> is one shade attempt and starts a new round; its quantity, due and receive-by dates show in the list's <b>Quantity &amp; dates</b> column, and can be changed in either place. Setting a <b>Brand review</b> to <b>Approved</b> makes the latest trial the final shade and moves the color to Stock Offerings. <b>Changes requested</b> sends it back to coating trial and adds the next trial round.</p>
+      <p class="dv-hint">A <b>Trial round</b> is one shade attempt and starts a new round; its quantity and receive-by date show in the list's <b>Quantity &amp; dates</b> column, and can be changed in either place. Setting a <b>Brand review</b> to <b>Approved</b> makes the latest trial the final shade and moves the color to Stock Offerings. <b>Changes requested</b> sends it back to coating trial and adds the next trial round.</p>
       ${prod ? `<p class="dv-muted dv-prod-note">${prod} brand / production step${prod===1?'':'s'} (purchase order, production run) saved for a future Production tab.</p>` : ''}`;
   }
   function readSteps(){
@@ -1037,6 +1077,10 @@
     const latestBrand = brands[brands.length-1];
     const trials = rdSteps(c).filter(s=>s.type==='trial');
     let note = '';
+    if(progressKey(c) !== progressKey(before)){
+      const st = syncStage(c, before);
+      if(st) note = `${c.name}: stage is now “${st}”, following Progress.`;
+    }
     // Brand feedback closes that review (or reopens it while it's with the brand).
     changed.forEach(s=>{ s.status = s.brandFeedback==='with_brand' ? 'In progress' : (s.brandFeedback ? 'Complete' : s.status); });
     const approved = changed.find(s=>s.brandFeedback==='approved');
